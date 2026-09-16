@@ -62,6 +62,74 @@ internal class RecipeIndex {
         this.byType = byType
     }
 
+    /**
+     * Crafting recipes bucketed by the dimensions of the grid they can possibly match.
+     *
+     * A shaped recipe only ever matches a trimmed matrix of exactly its own width x height, so a
+     * 2x2 recipe can be skipped outright when the player has laid out a 1x3. Without this,
+     * [RecipeManagerCommon.evaluateRecipesOfType] walked EVERY crafting recipe on every change to
+     * every crafting grid on the server.
+     *
+     * Shapeless recipes have no fixed shape and live in [shapelessCrafting] instead; they are always
+     * candidates (their own cheap guard is an ingredient-count compare).
+     *
+     * Built lazily and only once: a [RecipeIndex] is immutable, so this cannot go stale. The buckets
+     * preserve the priority order of [byType], because they are derived from it in order.
+     */
+    private val craftingBuckets: CraftingBuckets by lazy { buildCraftingBuckets() }
+
+    private class CraftingBuckets(
+        /** Per dimension: the shaped recipes of that size PLUS every shapeless one, in priority order. */
+        val byDimensions: Map<Int, List<RecipeReference<*>>>,
+        /** Used for a dimension no shaped recipe declares. */
+        val shapelessOnly: List<RecipeReference<*>>,
+    )
+
+    private fun buildCraftingBuckets(): CraftingBuckets {
+        val ordered = byType.get(RecipeTypes.crafting.resolveOrThrow())
+        val dimensions = HashSet<Int>()
+        val shapelessOnly = mutableListOf<RecipeReference<*>>()
+
+        for (ref in ordered) {
+            when (val formula = (ref.value as? CustomRecipeCrafting)?.formula) {
+                is CraftingFormula.Shaped -> dimensions.add(packDimensions(formula.shape.width, formula.shape.height))
+                // A null value means the reference was collected; it belongs in no bucket.
+                null -> {}
+                else -> shapelessOnly.add(ref)
+            }
+        }
+
+        // One pass per distinct dimension (at most a handful), so each bucket keeps the global
+        // priority order of `byType` and the lookup itself needs no allocation or merging.
+        val byDimensions = HashMap<Int, List<RecipeReference<*>>>(dimensions.size)
+        for (dimension in dimensions) {
+            val bucket = mutableListOf<RecipeReference<*>>()
+            for (ref in ordered) {
+                val formula = (ref.value as? CustomRecipeCrafting)?.formula ?: continue
+                val keep = if (formula is CraftingFormula.Shaped) {
+                    packDimensions(formula.shape.width, formula.shape.height) == dimension
+                } else {
+                    true
+                }
+                if (keep) bucket.add(ref)
+            }
+            byDimensions[dimension] = bucket
+        }
+        return CraftingBuckets(byDimensions, shapelessOnly)
+    }
+
+    /**
+     * Candidate crafting recipes for a grid of the given trimmed dimensions, in priority order.
+     *
+     * Shaped recipes of other dimensions cannot match and are never returned.
+     */
+    fun craftingCandidates(width: Int, height: Int): Collection<RecipeReference<*>> {
+        val buckets = craftingBuckets
+        return buckets.byDimensions[packDimensions(width, height)] ?: buckets.shapelessOnly
+    }
+
+    private fun packDimensions(width: Int, height: Int): Int = (width shl 8) or height
+
     fun values(): Collection<RecipeReference<*>> {
         return Collections.unmodifiableCollection(byKey.values)
     }

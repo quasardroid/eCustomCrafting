@@ -84,7 +84,11 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
         recipeCache.getIfPresent(blockPos)?.let { cache ->
             val recipe = cache.recipeEvaluationResult?.recipe?.value
             if (recipe != null) {
-                val inventory = (block.state as Furnace).inventory
+                // ONE snapshot for the whole handler. `Block.getState()` copies the entire tile
+                // entity (inventory + PDC); this used to call it four separate times per smelt,
+                // which on a server with furnace farms is four full copies per fuel tick.
+                val furnaceState = block.state as Furnace
+                val inventory = furnaceState.inventory
                 val source = inventory.smelting ?: return
                 val resultStack = inventory.result
 
@@ -94,12 +98,12 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
                     null,
                     block.location.toPreciseGlobal(),
                     block.location.toBlockPos(),
-                    (block.state as TileState).wrap()
+                    (furnaceState as TileState).wrap()
                 )
                 val pickedStack = result.compute(
                     cache.recipeEvaluationResult,
                     context,
-                    Random(getCookingSeed(block.state as Furnace))
+                    Random(getCookingSeed(furnaceState))
                 ).unwrapSpigot()
 
                 //Need to set the result to air to bypass the vanilla result computation (See net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity#burn).
@@ -142,8 +146,9 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
 
                 result.runActions(context)
 
-                // Successfully smelted result, pick a new seed to pick the next random result
-                (block.state as Furnace).apply {
+                // Successfully smelted result, pick a new seed to pick the next random result.
+                // Reuses the snapshot taken at the top instead of copying the tile entity again.
+                furnaceState.apply {
                     persistentDataContainer.set(
                         RecipeSeeds.cookingSeedKey,
                         PersistentDataType.LONG,
@@ -248,7 +253,18 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
 
     @EventHandler
     fun onCollectExperience(event: BlockExpEvent) {
-        val state = event.block.state
+        // BlockExpEvent fires for EVERY block broken that drops experience — ores, spawners, the lot.
+        // `Block.getState()` copies the whole tile entity, so reading it just to run an `is Furnace`
+        // check meant one full copy per ore mined, server-wide. Filter on the block type first: that
+        // is a plain block-data read.
+        val blockType = event.block.type
+        if (blockType != Material.FURNACE && blockType != Material.BLAST_FURNACE && blockType != Material.SMOKER) {
+            return
+        }
+
+        // `getState(false)` gives a non-snapshot view backed by the live tile entity, which is what
+        // we want here: we read its PDC and write it straight back.
+        val state = event.block.getState(false)
 
         if (state is Furnace) {
             val rootContainer = state.persistentDataContainer

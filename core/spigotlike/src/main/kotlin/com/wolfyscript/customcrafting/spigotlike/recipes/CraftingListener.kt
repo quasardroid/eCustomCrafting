@@ -15,6 +15,7 @@ import com.wolfyscript.scafall.spigot.api.wrappers.utils.toPreciseGlobal
 import com.wolfyscript.scafall.spigot.api.wrappers.utils.toScafall
 import com.wolfyscript.scafall.spigot.api.wrappers.utils.unwrapSpigot
 import com.wolfyscript.scafall.spigot.api.wrappers.utils.wrap
+import com.wolfyscript.scafall.wrappers.world.items.ScafallItemStack
 import org.bukkit.Bukkit
 import org.bukkit.Keyed
 import org.bukkit.Material
@@ -33,6 +34,14 @@ import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.Plugin
 import java.util.UUID
 import kotlin.random.Random
+
+/**
+ * Shared wrapper for an empty grid slot.
+ *
+ * A crafting grid is mostly empty, and this is read-only here, so there is no reason to allocate a
+ * new AIR ItemStack per empty slot on every grid change.
+ */
+private val EMPTY_STACK: ScafallItemStack = ItemStack(Material.AIR).wrap()
 
 /**
  * The click types whose result collection this listener implements (cursor pickup and quick-craft).
@@ -124,7 +133,16 @@ class CraftingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
             // ingredients, nulling every slot R does not know about.
             craftingDataCache.invalidate(player.uniqueId)
 
-            val matrix = CraftingMatrixData.of(e.inventory.matrix.map { it?.wrap() ?: ItemStack(Material.AIR).wrap() }.toList())
+            // PrepareItemCraftEvent fires on EVERY change to the grid, so this runs constantly.
+            // `map {}` already produces a List — the extra `.toList()` copied it a second time — and
+            // a fresh `ItemStack(Material.AIR)` was allocated for every empty slot. Build the list
+            // once, at the right size, and share one empty stack.
+            val bukkitMatrix = e.inventory.matrix
+            val wrapped = ArrayList<ScafallItemStack>(bukkitMatrix.size)
+            for (stack in bukkitMatrix) {
+                wrapped.add(if (stack == null) EMPTY_STACK else stack.wrap())
+            }
+            val matrix = CraftingMatrixData.of(wrapped)
             val input = RecipeInput.CraftingRecipeInput.of(matrix)
             matrixDataCache.put(player.uniqueId, matrix)
 
@@ -164,8 +182,13 @@ class CraftingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
                     return
                 }
 
-                //At this point the vanilla recipe is valid and can be crafted
-                Bukkit.getScheduler().runTask(plugin, Runnable { player.updateInventory() })
+                // At this point the vanilla recipe is valid and can be crafted.
+                //
+                // Deliberately NO updateInventory() here: CustomCrafting did not touch the result
+                // slot on this path, so there is nothing for the client to be out of sync with, and
+                // this branch runs on every grid change of every vanilla craft on the server —
+                // each one was resending the player's whole inventory.
+                // The branches that DO write `inventory.result` still refresh, above.
             }
         } catch (ex: Exception) {
             val craftingException = CraftingRecipeException(

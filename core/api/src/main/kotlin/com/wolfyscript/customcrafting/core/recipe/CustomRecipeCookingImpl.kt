@@ -25,10 +25,12 @@ internal class CustomRecipeCookingImpl(
         input: RecipeInput.SingleSlotRecipeInput,
         context: EvaluationContext,
     ): RecipeEvaluationResult.Data? {
+        // Structural match first, conditions second — see CustomRecipeCraftingImpl for why.
+        val data = processing.evaluate(input, this, context) ?: return null
         if (!conditions.areSatisfied(context)) {
             return null
         }
-        return processing.evaluate(input, this, context)
+        return data
     }
 
     override fun toString(): String {

@@ -27,9 +27,6 @@ internal class CustomRecipeSmithingImpl(
         input: RecipeInput.SmithingRecipeInput,
         context: EvaluationContext,
     ): RecipeEvaluationResult.Data? {
-        if (!conditions.areSatisfied(context)) {
-            return null
-        }
         if (
             !validIngredient(template, input.template) ||
             (input.base == null || input.base!!.isEmpty) ||
@@ -48,6 +45,12 @@ internal class CustomRecipeSmithingImpl(
         val matchedBase = evaluateIngredient(base, input.base) ?: return null
         val matchedAddition = evaluateIngredient(addition, input.addition)
         if (addition != null && matchedAddition == null) {
+            return null
+        }
+
+        // Conditions last: the ingredient match above is the cheap structural check, and the scan
+        // in evaluateRecipesOfType visits every smithing recipe. See CustomRecipeCraftingImpl.
+        if (!conditions.areSatisfied(context)) {
             return null
         }
 

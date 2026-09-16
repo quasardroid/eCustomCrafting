@@ -23,10 +23,6 @@ internal class CustomRecipeGrindingImpl(
         input: RecipeInput.GrindingRecipeInput,
         context: EvaluationContext,
     ): RecipeEvaluationResult.GrindingRecipeData? {
-        if (!conditions.areSatisfied(context)) {
-            return null
-        }
-
         var baseStack = input.base
         var additionStack = input.addition
 
@@ -65,6 +61,11 @@ internal class CustomRecipeGrindingImpl(
         }
         val matchedAddition = addition?.match(additionStack!!)?.let { additionMatch ->
             IngredientDataImpl(1, 1, addition, additionMatch)
+        }
+
+        // Conditions last — see CustomRecipeCraftingImpl.
+        if (!conditions.areSatisfied(context)) {
+            return null
         }
 
         return GrindingRecipeDataImpl(

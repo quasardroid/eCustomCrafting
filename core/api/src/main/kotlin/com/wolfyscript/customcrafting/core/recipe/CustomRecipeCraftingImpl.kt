@@ -19,11 +19,16 @@ internal class CustomRecipeCraftingImpl(
         input: RecipeInput.CraftingRecipeInput,
         context: EvaluationContext,
     ): RecipeEvaluationResult.Data? {
+        // Structural match FIRST. `evaluateRecipesOfType` scans every recipe of the type on every
+        // change to the grid, and the formula check is a cheap dimension/ingredient compare, while
+        // conditions are user-configured predicates (permission, world, ...) that can be arbitrarily
+        // expensive. Evaluating conditions for recipes whose shape cannot even fit the grid was the
+        // dominant cost of that scan. Both must hold, so the order does not change the outcome.
+        val data = formula.evaluate(input, this) ?: return null
         if (!conditions.areSatisfied(context)) {
             return null
         }
-
-        return formula.evaluate(input, this)
+        return data
     }
 
     override fun shrink(

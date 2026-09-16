@@ -22,11 +22,12 @@ internal class CustomRecipeStonecuttingImpl(
         input: RecipeInput.SingleSlotRecipeInput,
         context: EvaluationContext
     ): RecipeEvaluationResult.Data? {
+        // Structural match first, conditions second — see CustomRecipeCraftingImpl.
+        val matchResult = source.match(input.source) ?: return null
+
         if (!conditions.areSatisfied(context)) {
             return null
         }
-
-        val matchResult = source.match(input.source) ?: return null
 
         return DefaultDataImpl(arrayOf(IngredientDataImpl(0, 0, source, matchResult)))
     }

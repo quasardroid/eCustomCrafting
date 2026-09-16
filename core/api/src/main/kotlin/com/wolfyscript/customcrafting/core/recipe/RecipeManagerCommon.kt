@@ -186,9 +186,20 @@ internal class RecipeManagerCommon(val customCrafting: CustomCrafting) : RecipeM
         input: I,
         context: EvaluationContext,
     ): RecipeEvaluationResult<D, T>? {
-        val recipes: Collection<RecipeReference<T>> = index.byType(type)
+        // For a crafting grid, narrow the scan to the recipes whose shape can actually fit it. This
+        // runs on every change to every crafting grid on the server, and used to walk EVERY crafting
+        // recipe regardless of whether its shape had any chance of matching.
+        @Suppress("UNCHECKED_CAST")
+        val recipes: Collection<RecipeReference<T>> = if (input is RecipeInput.CraftingRecipeInput) {
+            index.craftingCandidates(input.matrixData.width, input.matrixData.height)
+                    as Collection<RecipeReference<T>>
+        } else {
+            index.byType(type)
+        }
+
+        val anyDisabled = backingDisabledRecipes.isNotEmpty()
         for (recipe in recipes) {
-            if (isRecipeDisabled(recipe.key)) {
+            if (anyDisabled && isRecipeDisabled(recipe.key)) {
                 continue
             }
             val data = recipe.value?.evaluate(input, context) ?: continue

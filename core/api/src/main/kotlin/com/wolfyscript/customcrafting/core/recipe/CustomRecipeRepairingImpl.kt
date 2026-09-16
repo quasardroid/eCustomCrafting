@@ -23,9 +23,6 @@ internal class CustomRecipeRepairingImpl(
         input: RecipeInput.RepairingRecipeInput,
         context: EvaluationContext,
     ): RecipeEvaluationResult.RepairingRecipeData? {
-        if (!conditions.areSatisfied(context)) {
-            return null
-        }
         val matchedBase = base.match(input.base)?.let { baseMatch ->
             IngredientDataImpl(0, 0, base, baseMatch)
         } ?: return null
@@ -39,6 +36,11 @@ internal class CustomRecipeRepairingImpl(
         if (addition != null) {
             val additionMatch = addition.match(input.addition!!) ?: return null
             matchedAddition = IngredientDataImpl(1, 1, addition, additionMatch)
+        }
+
+        // Conditions last — see CustomRecipeCraftingImpl.
+        if (!conditions.areSatisfied(context)) {
+            return null
         }
 
         return RepairingRecipeDataImpl(0, arrayOf(matchedBase, matchedAddition))
