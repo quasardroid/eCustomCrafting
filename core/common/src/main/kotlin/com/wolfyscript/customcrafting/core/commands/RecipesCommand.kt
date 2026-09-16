@@ -15,16 +15,20 @@ import net.minecraft.commands.Commands
 import net.minecraft.commands.arguments.IdentifierArgument
 import net.minecraft.network.chat.Component
 import net.minecraft.server.permissions.Permissions
+import java.util.concurrent.atomic.AtomicBoolean
 
 object RecipesCommand {
 
     const val ROOT_NAME = "recipes"
 
+    /** Guards against two overlapping reloads racing over the recipe index. */
+    private val reloading = AtomicBoolean(false)
+
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>) {
         sequenceOf(ROOT_NAME, "cc:$ROOT_NAME", "${Key.CUSTOMCRAFTING_NAMESPACE}:$ROOT_NAME").forEach { alias ->
             dispatcher.register(
                 Commands.literal(alias).requires { it.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER) }.apply {
-                    then(Commands.literal("reload").executes { reload(CustomCraftingProvider.get()) })
+                    then(Commands.literal("reload").executes { ctx -> reload(ctx, CustomCraftingProvider.get()) })
                     then(Commands.literal("status").executes { ctx ->
                         printStatus(ctx, CustomCraftingProvider.get())
                         return@executes SUCCESS_RESULT
@@ -33,15 +37,28 @@ object RecipesCommand {
                         Commands.literal("disable")
                             .then(Commands.argument("recipe", IdentifierArgument.id()).executes { ctx ->
                                 val recipeKey = IdentifierArgument.getId(ctx, "recipe").toScafall()
-                                CustomCraftingProvider.get().server!!.recipeManager.disableRecipe(recipeKey)
+                                val recipeManager = CustomCraftingProvider.get().server!!.recipeManager
+                                // disableRecipe silently does nothing for an unknown key, so a typo
+                                // told the operator an exploitable recipe was off while it was not.
+                                if (recipeManager.getRecipe(recipeKey) == null) {
+                                    ctx.source.sendFailure(Component.literal("Unknown recipe $recipeKey"))
+                                    return@executes SUCCESS_RESULT
+                                }
+                                recipeManager.disableRecipe(recipeKey)
 
                                 ctx.source.sendSuccess({ Component.literal("Disabled Recipe $recipeKey") }, false)
                                 return@executes SUCCESS_RESULT
                             }.suggests { ctx, builder ->
-                                CustomCraftingProvider.get().server!!.recipeManager.recipesLoadedByCC
-                                    .map { it.toString() }
-                                    .filter { it.startsWith(builder.remaining) }
-                                    .forEach { builder.suggest(it) }
+                                // Iterate directly and match case-insensitively. The map/filter
+                                // chain built two throwaway lists of every recipe key on EVERY
+                                // keystroke, and a lowercase prefix matched nothing.
+                                val prefix = builder.remainingLowerCase
+                                for (key in CustomCraftingProvider.get().server!!.recipeManager.recipesLoadedByCC) {
+                                    val rendered = key.toString()
+                                    if (rendered.lowercase().startsWith(prefix)) {
+                                        builder.suggest(rendered)
+                                    }
+                                }
 
                                 return@suggests builder.buildFuture()
                             })
@@ -50,15 +67,23 @@ object RecipesCommand {
                         Commands.literal("enable")
                             .then(Commands.argument("recipe", IdentifierArgument.id()).executes { ctx ->
                                 val recipeKey = IdentifierArgument.getId(ctx, "recipe").toScafall()
-                                CustomCraftingProvider.get().server!!.recipeManager.enableRecipe(recipeKey)
+                                val recipeManager = CustomCraftingProvider.get().server!!.recipeManager
+                                if (!recipeManager.isRecipeDisabled(recipeKey)) {
+                                    ctx.source.sendFailure(Component.literal("Recipe $recipeKey is not disabled"))
+                                    return@executes SUCCESS_RESULT
+                                }
+                                recipeManager.enableRecipe(recipeKey)
 
                                 ctx.source.sendSuccess({ Component.literal("Enabled Recipe $recipeKey") }, false)
                                 return@executes SUCCESS_RESULT
                             }.suggests { ctx, builder ->
-                                CustomCraftingProvider.get().server!!.recipeManager.disabledRecipes
-                                    .map { it.toString() }
-                                    .filter { it.startsWith(builder.remaining) }
-                                    .forEach { builder.suggest(it) }
+                                val prefix = builder.remainingLowerCase
+                                for (key in CustomCraftingProvider.get().server!!.recipeManager.disabledRecipes) {
+                                    val rendered = key.toString()
+                                    if (rendered.lowercase().startsWith(prefix)) {
+                                        builder.suggest(rendered)
+                                    }
+                                }
 
                                 return@suggests builder.buildFuture()
                             })
@@ -68,9 +93,39 @@ object RecipesCommand {
         }
     }
 
-    private fun reload(customCrafting: CustomCrafting): Int {
+    internal fun reload(ctx: CommandContext<CommandSourceStack>, customCrafting: CustomCrafting): Int {
+        if (!reloading.compareAndSet(false, true)) {
+            ctx.source.sendFailure(Component.literal("A reload is already running."))
+            return SUCCESS_RESULT
+        }
+        ctx.source.sendSuccess({ Component.literal("Reloading CustomCrafting resources...") }, false)
         ScafallProvider.get().scheduler.async(customCrafting) {
-            customCrafting.server!!.resourceManager.resourceLoader.loadResources()
+            // PARSE PHASE — off the main thread.
+            // Reading every recipe file, deserialising it and rebuilding the immutable recipe index
+            // is by far the most expensive part of a reload, and none of it touches server state.
+            //
+            // The reload used to report success before it had run, so a failure only ever showed up
+            // in the server log.
+            try {
+                val startedAt = System.nanoTime()
+                // The runtime reload path, not the first-startup one: `loadResources` re-exports the
+                // shipped defaults and re-runs onPrepare every time.
+                customCrafting.server!!.resourceManager.resourceLoader.reloadResources()
+                val parseMillis = (System.nanoTime() - startedAt) / 1_000_000
+
+                // APPLY PHASE — the platform decides how to get onto the main thread, and spreads
+                // the registry work over several ticks so the tick loop never stalls.
+                customCrafting.server!!.onRecipesReloaded()
+
+                ctx.source.sendSuccess({
+                    Component.literal("Reloaded CustomCrafting resources in ${parseMillis}ms. Syncing recipes to the server...")
+                }, false)
+            } catch (ex: Exception) {
+                customCrafting.logger.error("Failed to reload resources", ex)
+                ctx.source.sendFailure(Component.literal("Reload failed: ${ex.message}. See the server log."))
+            } finally {
+                reloading.set(false)
+            }
         }
         return SUCCESS_RESULT
     }

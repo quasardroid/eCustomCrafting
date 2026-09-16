@@ -2,15 +2,16 @@
   "schemaVersion": 1,
   "id": "customcrafting",
   "version": "${version}",
-  "name": "customcrafting",
-  "description": "",
+  "name": "CustomCrafting",
+  "description": "Create custom recipes for a vast variety of workstations, and toggle, disable or override vanilla recipes.",
   "authors": [
     "WolfyScript"
   ],
   "contact": {
-    "sources": "https://github.com/WolfyScript/scafall"
+    "sources": "https://github.com/WolfyScript/CustomCrafting",
+    "issues": "https://github.com/WolfyScript/CustomCrafting/issues"
   },
-  "license": "CC0-1.0",
+  "license": "GPL-3.0-or-later",
   "environment": "*",
   "entrypoints": {
     "main": [

@@ -95,7 +95,9 @@ internal class ProcessGrindingDefaultImpl(
         recipeEvaluationResult.data.penalty = penalty
         if (yield > 0) {
             val reduced = ceil(yield / 2.0).toInt()
-            yield = reduced + Random.nextInt(reduced)
+            // Use the SEEDED instance that was passed in, not Random.Default: the seed exists so the
+            // reward cannot be re-rolled by tapping items in and out of the menu.
+            yield = reduced + random.nextInt(reduced)
         } else {
             yield = 0
         }

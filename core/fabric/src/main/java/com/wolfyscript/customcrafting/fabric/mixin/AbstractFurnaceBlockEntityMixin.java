@@ -30,11 +30,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(AbstractFurnaceBlockEntity.class)
 public abstract class AbstractFurnaceBlockEntityMixin implements RecipeResultCacheExt {
 
+    // Lazy: this is mixed into EVERY furnace, blast furnace and smoker in every loaded chunk, and
+    // only the handful that actually run a CustomCrafting recipe ever need it.
     @Unique
-    private final RecipeResultStateCache resultStateCache = new RecipeResultStateCache();
+    private RecipeResultStateCache resultStateCache;
 
     @Override
     public RecipeResultStateCache customcrafting$getRecipeResultStateCache() {
+        if (resultStateCache == null) {
+            resultStateCache = new RecipeResultStateCache();
+        }
         return resultStateCache;
     }
 
@@ -48,7 +53,7 @@ public abstract class AbstractFurnaceBlockEntityMixin implements RecipeResultCac
         EvaluationContextState.INSTANCE.exit();
     }
 
-    @ModifyVariable(method = "serverTick", at = @At(value = "STORE"), name = "input")
+    @ModifyVariable(method = "serverTick", at = @At(value = "STORE")) // matched by type; LVT names do not survive obfuscation
     private static SingleRecipeInput injectCustomDataIntoSingleRecipeInput(SingleRecipeInput input, ServerLevel level, BlockPos pos, BlockState state, AbstractFurnaceBlockEntity entity) {
         var source = ItemStackWrappersKt.wrap(entity.getItem(0));
         ((RecipeInputSingleSlotCustomExt) (Object) input).setCustomInput(RecipeInput.SingleSlotRecipeInput.Companion.of(source));
@@ -65,7 +70,7 @@ public abstract class AbstractFurnaceBlockEntityMixin implements RecipeResultCac
     private static void wrapShrinkItemAndProduceResult(
         NonNullList<ItemStack> items, ItemStack inputItemStack, ItemStack result, Operation<Void> original,
         ServerLevel level, BlockPos pos, BlockState state, AbstractFurnaceBlockEntity entity,
-        @Local(name = "input") SingleRecipeInput input
+        @Local /* was: name="input" */ SingleRecipeInput input
     ) {
         var resultInfo = ((RecipeInputSingleSlotCustomExt) (Object) input).getResultInfo();
         if (resultInfo == null || !(resultInfo.getRecipe().getValue() instanceof CustomRecipeCooking cookingRecipe)) {
@@ -89,6 +94,11 @@ public abstract class AbstractFurnaceBlockEntityMixin implements RecipeResultCac
                 return;
             }
             existingResultStack.grow(resultStack.getCount());
+        } else {
+            // The output slot holds a DIFFERENT item, so the result cannot be stored. Falling
+            // through here dropped the computed result on the floor and still ran the actions and
+            // consumed the input below.
+            return;
         }
 
         ((RecipeResultCacheExt) entity).customcrafting$getRecipeResultStateCache().reset(resultInfo.getRecipe().getKey());

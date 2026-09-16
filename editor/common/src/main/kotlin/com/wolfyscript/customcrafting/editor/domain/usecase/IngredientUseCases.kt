@@ -68,8 +68,11 @@ interface IngredientUseCases {
                     val stacks = ingredient.choices.stacks.toMutableList()
                     stacks.add(stack)
                     val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
-                        RecipeChoicesModelImpl(stacks, ingredient.choices.tags)
+                        RecipeChoicesModelImpl(stacks, ingredient.choices.tags),
+                        // Must carry the matcher and consumer over, like the Tags use-cases do;
+                        // omitting them silently reset both to their defaults on every edit.
+                        ingredient.matcher,
+                        ingredient.consumer
                     )
                     setIngredientUseCase.set(ingredientIndex, updated)
                 }
@@ -85,10 +88,15 @@ interface IngredientUseCases {
                 val ingredient = getIngredientUseCase.get(ingredientIndex)
                 if (ingredient is IngredientModel.CustomIngredientModel) {
                     val stacks = ingredient.choices.stacks.toMutableList()
+                    // The caller passes a clicked GUI slot, which may be past the end of the list.
+                    if (index < 0 || index >= stacks.size) return
                     stacks.removeAt(index)
                     val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
-                        RecipeChoicesModelImpl(stacks, ingredient.choices.tags)
+                        RecipeChoicesModelImpl(stacks, ingredient.choices.tags),
+                        // Must carry the matcher and consumer over, like the Tags use-cases do;
+                        // omitting them silently reset both to their defaults on every edit.
+                        ingredient.matcher,
+                        ingredient.consumer
                     )
                     setIngredientUseCase.set(ingredientIndex, updated)
                 }
@@ -105,10 +113,15 @@ interface IngredientUseCases {
                 val ingredient = getIngredientUseCase.get(ingredientIndex)
                 if (ingredient is IngredientModel.CustomIngredientModel) {
                     val stacks = ingredient.choices.stacks.toMutableList()
+                    // Same: a click on an empty slot must not blow up or append silently.
+                    if (index < 0 || index >= stacks.size) return
                     stacks[index] = stack
                     val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
-                        RecipeChoicesModelImpl(stacks, ingredient.choices.tags)
+                        RecipeChoicesModelImpl(stacks, ingredient.choices.tags),
+                        // Must carry the matcher and consumer over, like the Tags use-cases do;
+                        // omitting them silently reset both to their defaults on every edit.
+                        ingredient.matcher,
+                        ingredient.consumer
                     )
                     setIngredientUseCase.set(ingredientIndex, updated)
                 }
@@ -146,7 +159,6 @@ interface IngredientUseCases {
                         tags.add(tag)
                     }
                     val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
                         RecipeChoicesModelImpl(ingredient.choices.stacks, tags),
                         ingredient.matcher,
                         ingredient.consumer
@@ -167,7 +179,6 @@ interface IngredientUseCases {
                     val tags = ingredient.choices.tags.toMutableList()
                     tags.removeAt(index)
                     val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
                         RecipeChoicesModelImpl(ingredient.choices.stacks, tags),
                         ingredient.matcher,
                         ingredient.consumer
@@ -182,7 +193,6 @@ interface IngredientUseCases {
                     val tags = ingredient.choices.tags.toMutableList()
                     tags.remove(key)
                     val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
                         RecipeChoicesModelImpl(ingredient.choices.stacks, tags),
                         ingredient.matcher,
                         ingredient.consumer
@@ -217,9 +227,7 @@ interface IngredientUseCases {
             fun set(ingredientIndex: Int, matcher: IngredientMatcherModel<*>) {
                 val ingredient = getIngredientUseCase.get(ingredientIndex)
                 if (ingredient is IngredientModel.CustomIngredientModel) {
-                    val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
-                        ingredient.choices,
+                    val updated = CustomIngredientModelImpl(                        ingredient.choices,
                         matcher = matcher,
                         ingredient.consumer
                     )
@@ -253,9 +261,7 @@ interface IngredientUseCases {
             fun set(ingredientIndex: Int, consumer: IngredientConsumerModel<*>) {
                 val ingredient = getIngredientUseCase.get(ingredientIndex)
                 if (ingredient is IngredientModel.CustomIngredientModel) {
-                    val updated = CustomIngredientModelImpl(
-                        ingredient.replaceWithRemains,
-                        ingredient.choices,
+                    val updated = CustomIngredientModelImpl(                        ingredient.choices,
                         ingredient.matcher,
                         consumer = consumer
                     )

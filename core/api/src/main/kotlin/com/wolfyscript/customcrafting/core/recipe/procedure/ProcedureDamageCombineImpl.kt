@@ -19,14 +19,16 @@ internal class ProcedureDamageCombineImpl(
         val additionDur = addition.maxDamage - addition.damageValue
 
         val damage = if (combineDurabilityAsRatio) {
-            // take the percentages of durability and combine them, so ratios are kept
-            val baseDurPerc = baseDur / base.maxDamage
-            val additionDurPerc = additionDur / addition.maxDamage
+            // take the percentages of durability and combine them, so ratios are kept.
+            // These MUST be floating point: as Int division the ratio was 1 only for a pristine
+            // item and 0 for every damaged one, so combining two half-worn tools repaired nothing.
+            val baseDurPerc = if (base.maxDamage > 0) baseDur.toDouble() / base.maxDamage else 0.0
+            val additionDurPerc = if (addition.maxDamage > 0) additionDur.toDouble() / addition.maxDamage else 0.0
             val totalDurRepairPerc = baseDurPerc + additionDurPerc
 
             // apply the ratio and bonus based on the max-damage of the result
             val bonusAmount = result.maxDamage * bonusPercentage / 100
-            val scalarDur = totalDurRepairPerc * result.maxDamage + bonusAmount
+            val scalarDur = (totalDurRepairPerc * result.maxDamage).toInt() + bonusAmount
 
             result.maxDamage - scalarDur
         } else {

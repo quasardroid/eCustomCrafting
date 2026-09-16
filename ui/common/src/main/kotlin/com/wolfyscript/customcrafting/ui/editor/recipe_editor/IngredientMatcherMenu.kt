@@ -28,20 +28,25 @@ import net.minecraft.core.component.DataComponents
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 import net.minecraft.world.item.component.ItemLore
+import kotlin.math.ceil
+
+private const val PAGE_SIZE = 20
 
 private class IngredientMatcherStore : Store() {
 
     data class AvailableMatchers(
         val loading: Boolean = false,
         val matchers: List<EditorModelFactory<out IngredientMatcherModel<*>>> = emptyList(),
+        /** So the view can stop offering a next page past the end. */
+        val totalPages: Int = 0,
     )
 
     val availableMatchers: StateFlow<AvailableMatchers>
         field = MutableStateFlow(AvailableMatchers())
 
     fun setSelectionPage(page: Int) {
-        val startIndex = page * 20
-        getAvailableMatchersList(startIndex, startIndex + 20)
+        val startIndex = page.coerceAtLeast(0) * PAGE_SIZE
+        getAvailableMatchersList(startIndex, startIndex + PAGE_SIZE)
     }
 
     private fun getAvailableMatchersList(fromIndex: Int, toIndex: Int) {
@@ -50,10 +55,17 @@ private class IngredientMatcherStore : Store() {
                 AvailableMatchers(loading = true)
             }
             availableMatchers.update {
+                var pageCount = 0
                 val matchers = try {
                     val all = EditorRegistryTypes.ingredientMatchers.resolveOrThrow()
                         .values().toList()
-                    all.subList(fromIndex, toIndex.coerceAtMost(all.size))
+                    pageCount = ceil(all.size / PAGE_SIZE.toFloat()).toInt()
+                    // Clamp BOTH ends. Only the upper bound was clamped, so a next-page click past
+                    // the end passed a fromIndex beyond the list and subList threw on every click,
+                    // caught below and logged as an error.
+                    val start = fromIndex.coerceIn(0, all.size)
+                    val end = toIndex.coerceIn(start, all.size)
+                    all.subList(start, end)
                 } catch (e: Exception) {
                     ScafallProvider.get().logger.error("Error while fetching custom ingredient-matcher models", e)
                     emptyList()
@@ -61,7 +73,8 @@ private class IngredientMatcherStore : Store() {
 
                 AvailableMatchers(
                     loading = false,
-                    matchers = matchers
+                    matchers = matchers,
+                    totalPages = pageCount,
                 )
             }
         }
@@ -174,8 +187,12 @@ private fun SelectMatcherType(
                 Icon(stack = ItemStack(Items.CONCRETE.cyan).snapshot())
             }
             Button(onClick = {
-                page++
-                onPageChange(page)
+                // Stop at the last page. This button used to increment without bound, walking the
+                // window off the end of the list on every further click.
+                if (page < matchers.totalPages - 1) {
+                    page++
+                    onPageChange(page)
+                }
             }) {
                 Icon(stack = ItemStack(Items.CONCRETE.cyan).snapshot())
             }

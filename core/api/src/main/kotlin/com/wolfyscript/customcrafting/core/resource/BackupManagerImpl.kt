@@ -10,7 +10,11 @@ internal class BackupManagerImpl(val customCrafting: CustomCrafting, val resourc
 
     override fun createBackup() {
         for (destination in destinations) {
-            destination.backup()
+            // The Result used to be discarded, so a backup that could not even create its directory
+            // was reported as done. An IOException from one destination must also not stop the rest.
+            runCatching { destination.backup() }
+                .getOrElse { Result.failure(it) }
+                .onFailure { customCrafting.logger.error("Backup destination $destination failed", it) }
         }
     }
 

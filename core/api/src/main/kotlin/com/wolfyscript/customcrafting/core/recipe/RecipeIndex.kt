@@ -21,7 +21,16 @@ import java.util.*
 internal class RecipeIndex {
 
     companion object {
-        private val recipeValueComparator: Comparator<RecipeReference<*>> = Comparator.comparing { it.value?.priority ?: 0 }
+        /**
+         * Orders the per-type recipe list by DESCENDING priority.
+         *
+         * [RecipeManagerCommon.evaluateRecipesOfType] returns the first match, and
+         * [CustomRecipe.priority] is documented as "recipes of higher priority are checked before
+         * recipes of lower priority" — a plain ascending `comparing` made the lowest priority win,
+         * so the documented way to override a recipe never fired.
+         */
+        private val recipeValueComparator: Comparator<RecipeReference<*>> =
+            Comparator.comparing<RecipeReference<*>, Int> { it.value?.priority ?: 0 }.reversed()
     }
 
     private val recipes: List<CustomRecipe<*, *>>
@@ -69,14 +78,26 @@ internal class RecipeIndex {
 
         updatedRecipes.addAll(this.recipes)
         val updatedByKey = byKey.toMutableMap()
+        val newRefs = LinkedHashMap<Key, RecipeReference<*>>(recipes.size)
         for (recipe in recipes) {
+            // Drop the superseded entry first: ImmutableMap.Builder throws on duplicate keys.
             val existing = updatedByKey.remove(recipe.key)
             updatedRecipes.remove(existing?.value)
             updatedRecipes.add(recipe.value)
 
-            val ref = RecipeReference.of(recipe.key, recipe.value)
-            byTypeBuilder.put(recipe.value.type, ref)
-            byKeyBuilder.put(recipe.key, ref)
+            newRefs[recipe.key] = RecipeReference.of(recipe.key, recipe.value)
+        }
+
+        // Carry the surviving recipes over. Without this, the rebuilt lookup maps hold ONLY the
+        // recipes passed to this call, so registering a single recipe silently unregistered every
+        // other recipe on the server while `recipes` still listed them.
+        for ((key, ref) in updatedByKey) {
+            byKeyBuilder.put(key, ref)
+            ref.value?.let { byTypeBuilder.put(it.type, ref) }
+        }
+        for ((key, ref) in newRefs) {
+            byKeyBuilder.put(key, ref)
+            ref.value?.let { byTypeBuilder.put(it.type, ref) }
         }
 
         return RecipeIndex(updatedRecipes, byKeyBuilder.build(), byTypeBuilder.build())

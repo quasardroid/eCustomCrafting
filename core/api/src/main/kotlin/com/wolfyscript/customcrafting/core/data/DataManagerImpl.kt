@@ -4,10 +4,7 @@ import java.io.File
 
 internal class DataManagerImpl(rootDir: File) : DataManager {
 
-    companion object {
-        const val DATA_PATH = ".data"
-    }
-
-    override val storageDir: File = File(rootDir, DATA_PATH)
+    // The path lives on the DataManager interface; a second copy here could drift from it.
+    override val storageDir: File = File(rootDir, DataManager.DATA_PATH)
 
 }

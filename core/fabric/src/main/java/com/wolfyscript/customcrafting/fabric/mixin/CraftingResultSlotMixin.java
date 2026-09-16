@@ -45,7 +45,7 @@ public abstract class CraftingResultSlotMixin extends Slot {
         ),
         cancellable = true
     )
-    private void shrinkCustomRecipeMatrix(Player player, ItemStack carried, CallbackInfo ci, @Local(name = "input") CraftingInput input) {
+    private void shrinkCustomRecipeMatrix(Player player, ItemStack carried, CallbackInfo ci, @Local /* was: name="input" */ CraftingInput input) {
         if (!(this.container instanceof CCResultContainerExt resultContainer) || !resultContainer.hasResultInfo()) return;
         var resultInfo = resultContainer.getResultInfo(); assert resultInfo != null;
         var customInput = ((RecipeInputCraftingCustomExt) input).getCustomInput();

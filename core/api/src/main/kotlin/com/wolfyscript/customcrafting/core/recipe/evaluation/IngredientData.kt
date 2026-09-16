@@ -20,6 +20,18 @@ interface IngredientData {
     val recipeIndex: Int
 
     /**
+     * The index of the matched stack inside the **trimmed** crafting matrix
+     * ([CraftingMatrixData.matrix]).
+     *
+     * This is NOT the same as [recipeIndex]: for a shapeless recipe the ingredient order is
+     * independent of where the items sit in the grid. Use this to read the stack that was matched,
+     * and [invSlot] to write it back.
+     *
+     * For recipe types that do not evaluate against a crafting matrix this defaults to [invSlot].
+     */
+    val matrixIndex: Int
+
+    /**
      * The ingredient associated with this information
      */
     val selectedIngredient: Ingredient

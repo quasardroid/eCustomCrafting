@@ -3,6 +3,7 @@ package com.wolfyscript.customcrafting.paper
 import com.wolfyscript.customcrafting.CustomCraftingBoostrap
 import com.wolfyscript.customcrafting.core.data.DataManager
 import com.wolfyscript.customcrafting.core.sentry.setupSentry
+import com.wolfyscript.customcrafting.core.sentry.teardownSentry
 import com.wolfyscript.customcrafting.core.util.CUSTOMCRAFTING_NAMESPACE
 import com.wolfyscript.customcrafting.core.util.ModuleImpl
 import com.wolfyscript.scafall.identifier.Key
@@ -36,8 +37,8 @@ class PaperLoaderPlugin : JavaPlugin() {
     }
 
     override fun onLoad() {
-        customCrafting.configurationManager.load()
-
+        // CustomCraftingPaper.onInit() already loads the configuration; doing it here as well
+        // parsed every config file from disk twice on every boot.
         customCrafting.initServer(Bukkit.getServer())
     }
 
@@ -53,6 +54,7 @@ class PaperLoaderPlugin : JavaPlugin() {
 
     override fun onDisable() {
         customCrafting.server?.onUnload()
+        teardownSentry()
     }
 
 }

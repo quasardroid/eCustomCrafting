@@ -7,10 +7,8 @@ import com.wolfyscript.customcrafting.core.recipe.ingredient.Ingredient
 import com.wolfyscript.customcrafting.core.recipe.ingredient.IngredientConsumer
 import com.wolfyscript.scafall.identifier.Key
 import com.wolfyscript.scafall.wrappers.world.items.ItemStackSnapshot
-import kotlinx.coroutines.runBlocking
 
 class CustomIngredientModelImpl(
-    override var replaceWithRemains: Boolean = true,
     override val choices: RecipeChoicesModel = RecipeChoicesModelImpl(),
     override val matcher: IngredientMatcherModel<*> = IngredientMatcherModels.exact.resolveOrThrow().createEmptyModel(),
     override val consumer: IngredientConsumerModel<*> = IngredientConsumerModels.consume.resolveOrThrow().createEmptyModel(),
@@ -20,7 +18,6 @@ class CustomIngredientModelImpl(
 
         fun loadFrom(ingredient: Ingredient): CustomIngredientModelImpl {
             val state = CustomIngredientModelImpl(
-                (ingredient.consumption is IngredientConsumer.Consume),
                 RecipeChoicesModelImpl(
                     ingredient.choices.stacks.toMutableList(),
                     ingredient.choices.tags.toMutableList(),
@@ -32,23 +29,23 @@ class CustomIngredientModelImpl(
 
     }
 
+    // No `runBlocking`: nothing in here suspends, so the wrapper only added a coroutine frame and
+    // blocked whichever thread called it.
     override fun complete(): Result<Ingredient> {
-        return runBlocking {
-            val recipeChoices = choices.complete().getOrElse {
-                return@runBlocking Result.failure(IllegalStateException("Failed to complete Ingredient.", it))
-            }
-            if (recipeChoices.all().isEmpty()) {
-                return@runBlocking Result.failure(IllegalArgumentException("Ingredient must have at least one stack or tag."))
-            }
-            val completedMatcher = matcher.complete().getOrElse {
-                return@runBlocking Result.failure(IllegalStateException("Failed to complete Ingredient.", it))
-            }
-            val completedConsumer = consumer.complete().getOrElse {
-                return@runBlocking Result.failure(IllegalStateException("Failed to complete Ingredient.", it))
-            }
-
-            return@runBlocking Result.success(Ingredient.of(recipeChoices, completedMatcher, completedConsumer))
+        val recipeChoices = choices.complete().getOrElse {
+            return Result.failure(IllegalStateException("Failed to complete Ingredient.", it))
         }
+        if (recipeChoices.all().isEmpty()) {
+            return Result.failure(IllegalArgumentException("Ingredient must have at least one stack or tag."))
+        }
+        val completedMatcher = matcher.complete().getOrElse {
+            return Result.failure(IllegalStateException("Failed to complete Ingredient.", it))
+        }
+        val completedConsumer = consumer.complete().getOrElse {
+            return Result.failure(IllegalStateException("Failed to complete Ingredient.", it))
+        }
+
+        return Result.success(Ingredient.of(recipeChoices, completedMatcher, completedConsumer))
     }
 
 }

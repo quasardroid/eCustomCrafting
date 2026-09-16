@@ -13,6 +13,10 @@ import com.wolfyscript.customcrafting.core.configuration.resources.DirectoryBack
 import com.wolfyscript.customcrafting.core.configuration.resources.DirectorySourceSettingsImpl
 import com.wolfyscript.customcrafting.core.configuration.resources.FilterEntryImpl
 import com.wolfyscript.customcrafting.core.configuration.resources.FilterSettingsImpl
+import com.wolfyscript.customcrafting.core.configuration.recipes.RecipeBookSettings
+import com.wolfyscript.customcrafting.core.configuration.recipes.RecipeBookSettingsImpl
+import com.wolfyscript.customcrafting.core.configuration.recipes.WorkstationSettings
+import com.wolfyscript.customcrafting.core.configuration.recipes.WorkstationSettingsImpl
 import com.wolfyscript.customcrafting.core.configuration.resources.ResourceSettings
 import com.wolfyscript.customcrafting.core.configuration.resources.ResourceSettingsImpl
 import com.wolfyscript.customcrafting.core.configuration.resources.SQLSourceSettingsImpl
@@ -27,6 +31,8 @@ class ConfigurationManagerImpl(val customCrafting: CustomCrafting, val rootDir: 
     private val configMapper = HoconMapper()
 
     override var resourceSettings: ResourceSettings = ResourceSettingsImpl(emptyList(), BackupSettingsImpl(emptyList()))
+    override var recipeBookSettings: RecipeBookSettings = RecipeBookSettingsImpl()
+    override var workstationSettings: WorkstationSettings = WorkstationSettingsImpl()
     override val gameMechanicSettings: GameMechanicSettings
         get() = TODO("Not yet implemented")
     override val guiSettings: GUISettings
@@ -35,15 +41,24 @@ class ConfigurationManagerImpl(val customCrafting: CustomCrafting, val rootDir: 
         get() = TODO("Not yet implemented")
 
     private val resourcesSettingsFile = File(configDir, "resources/resources.conf")
-    private val gameMechanicSettingsFile = File(configDir, "mechanics/mechanics.conf")
-    private val guiSettingsFile = File(configDir, "gui/gui.conf")
-    private val cliSettingsFile = File(configDir, "cli/cli.conf")
+    private val recipeBookSettingsFile = File(configDir, "recipes/recipe_book.conf")
+    private val workstationSettingsFile = File(configDir, "recipes/workstations.conf")
+    // The mechanics/gui/cli settings files were declared here but never read by anything — their
+    // accessors above are still `TODO()`. Declare them again next to the code that loads them.
 
     init {
         val mappingModule = SimpleModule().apply {
             addAbstractTypeMapping(
                 ResourceSettings::class.java,
                 ResourceSettingsImpl::class.java
+            )
+            addAbstractTypeMapping(
+                RecipeBookSettings::class.java,
+                RecipeBookSettingsImpl::class.java
+            )
+            addAbstractTypeMapping(
+                WorkstationSettings::class.java,
+                WorkstationSettingsImpl::class.java
             )
 
             // Source Settings
@@ -79,12 +94,6 @@ class ConfigurationManagerImpl(val customCrafting: CustomCrafting, val rootDir: 
         configMapper.registerKotlinModule()
     }
 
-    init {
-        saveDefaults()
-
-        resourceSettings = configMapper.readValue<ResourceSettings>(resourcesSettingsFile)
-    }
-
     fun saveDefaults() {
         if (!resourcesSettingsFile.exists()) {
             exportResource(
@@ -92,11 +101,59 @@ class ConfigurationManagerImpl(val customCrafting: CustomCrafting, val rootDir: 
                 resourcesSettingsFile
             )
         }
+        if (!recipeBookSettingsFile.exists()) {
+            exportResource(
+                "com/wolfyscript/customcrafting/configuration/default/recipes/recipe_book.conf",
+                recipeBookSettingsFile
+            )
+        }
+        if (!workstationSettingsFile.exists()) {
+            exportResource(
+                "com/wolfyscript/customcrafting/configuration/default/recipes/workstations.conf",
+                workstationSettingsFile
+            )
+        }
     }
 
+    /**
+     * Reads the configuration from disk.
+     *
+     * The parsing used to happen in the constructor while this method only logged a line, so
+     * `load()` (and therefore a reload) did nothing, and a malformed config threw straight out of
+     * the constructor instead of falling back to the defaults.
+     */
     override fun load() {
         customCrafting.logger.info("Loading configurations...")
+        saveDefaults()
 
+        resourceSettings = try {
+            configMapper.readValue<ResourceSettings>(resourcesSettingsFile)
+        } catch (ex: Exception) {
+            customCrafting.logger.error(
+                "Failed to parse $resourcesSettingsFile; falling back to the built-in defaults", ex
+            )
+            ResourceSettingsImpl(emptyList(), BackupSettingsImpl(emptyList()))
+        }
+
+        recipeBookSettings = try {
+            configMapper.readValue<RecipeBookSettings>(recipeBookSettingsFile)
+        } catch (ex: Exception) {
+            customCrafting.logger.error(
+                "Failed to parse $recipeBookSettingsFile; falling back to the built-in defaults", ex
+            )
+            RecipeBookSettingsImpl()
+        }
+        workstationSettings = try {
+            configMapper.readValue<WorkstationSettings>(workstationSettingsFile)
+        } catch (ex: Exception) {
+            customCrafting.logger.error(
+                "Failed to parse $workstationSettingsFile; falling back to the built-in defaults", ex
+            )
+            WorkstationSettingsImpl()
+        }
+
+        customCrafting.logger.info("Recipe book: $recipeBookSettings")
+        customCrafting.logger.info("Workstations: $workstationSettings")
     }
 
 }

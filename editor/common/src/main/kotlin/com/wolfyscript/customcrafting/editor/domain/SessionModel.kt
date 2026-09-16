@@ -22,13 +22,13 @@ interface SessionModel {
         /**
          * Saves the edited recipe, overwriting the existing recipe.
          */
-        fun save()
+        fun save(): Result<Unit>
 
         /**
          * Saves the edited recipe with a new key.
          * The existing recipe is not overwritten/deleted!
          */
-        fun saveAs(key: Key)
+        fun saveAs(key: Key): Result<Unit>
 
     }
 
@@ -40,7 +40,7 @@ interface SessionModel {
         /**
          * Saves a new recipe under the specified key
          */
-        fun save(key: Key)
+        fun save(key: Key): Result<Unit>
 
     }
 

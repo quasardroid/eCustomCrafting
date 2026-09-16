@@ -1,6 +1,5 @@
 package com.wolfyscript.customcrafting.core.data
 
-import com.wolfyscript.customcrafting.core.CustomCrafting
 import java.io.File
 
 interface DataManager {
@@ -9,7 +8,7 @@ interface DataManager {
 
         const val DATA_PATH = ".data"
 
-        fun createNewForDir(customCrafting: CustomCrafting, directory: File): DataManager {
+        fun createNewForDir(directory: File): DataManager {
             return DataManagerImpl(directory)
         }
 

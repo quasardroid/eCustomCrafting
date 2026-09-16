@@ -32,9 +32,13 @@ internal class DestinationFilter(
             }
 
             if (
-                settings.paths.any {
-                    key.value.startsWith(it) &&
-                            key.value.replace(it, "").lastIndexOf("/") == -1
+                settings.paths.any { path ->
+                    // `replace` stripped EVERY occurrence and left the separator behind, so the
+                    // remainder of "recipes/foo" against "recipes" was "/foo" and the
+                    // "is a direct child" test (no further '/') could never pass.
+                    val prefix = path.removeSuffix("/")
+                    key.value.startsWith(prefix) &&
+                            !key.value.removePrefix(prefix).removePrefix("/").contains("/")
                 }
             ) {
                 return true

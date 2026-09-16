@@ -3,6 +3,7 @@ package com.wolfyscript.customcrafting.ui.editor.recipe_editor.crafting
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import com.wolfyscript.customcrafting.CustomCraftingProvider
 import com.wolfyscript.customcrafting.editor.domain.model.recipe.item.IngredientModel
 import com.wolfyscript.customcrafting.editor.domain.model.recipe.RecipeCraftingModel
@@ -144,11 +145,14 @@ private class FormulaStore(
     fun getIngredientCollectionIcons(): List<ItemStackTemplate> {
         val stacks = mutableListOf<ItemStackTemplate>()
         stacks.add(FormulaPageDefaults.IngredientScrollSelectReset)
-        getIngredientCollection.getCollection().ingredients.mapNotNullTo(stacks) {
-            if (it is IngredientModel.CustomIngredientModel) {
-                return@mapNotNullTo it.choices.stacks.firstOrNull()?.toTemplate()
-            }
-            null
+        // Exactly ONE entry per ingredient. The view submits the position in this list and the store
+        // uses `position - 1` as the collection index, so dropping entries (a saved ingredient, or a
+        // custom one with no stacks yet) silently shifted every later selection onto the wrong
+        // ingredient.
+        for (ingredient in getIngredientCollection.getCollection().ingredients) {
+            val icon = (ingredient as? IngredientModel.CustomIngredientModel)
+                ?.choices?.stacks?.firstOrNull()?.toTemplate()
+            stacks.add(icon ?: FormulaPageDefaults.IngredientScrollSelectPlaceholder)
         }
         return stacks
     }
@@ -209,6 +213,11 @@ fun FormulaPageAdvanced() {
         ) {
 
             // 3x3 Grid of selector buttons (not slot inputs!)
+            // The scroll-select contents are the SAME for all nine cells. Building them inside the
+            // loop re-read the whole ingredient collection and allocated a fresh icon list plus a
+            // BundleContents nine times per recomposition.
+            val collectionIcons = remember(formulaState) { store.getIngredientCollectionIcons() }
+            val bundleContents = remember(collectionIcons) { BundleContents(collectionIcons) }
             Column(Modifier.height(3.slots)) {
                 repeat(3) { row ->
                     Row(Modifier.width(3.slots)) {
@@ -238,10 +247,7 @@ fun FormulaPageAdvanced() {
                                             addAll(FormulaPageDefaults.IngredientScrollSelectInteractionLore)
                                         })
                                     }
-                                    set(
-                                        DataComponents.BUNDLE_CONTENTS,
-                                        BundleContents(store.getIngredientCollectionIcons())
-                                    )
+                                    set(DataComponents.BUNDLE_CONTENTS, bundleContents)
                                 }.snapshot()
                             })
                         }
@@ -327,6 +333,16 @@ private object FormulaPageDefaults {
 
     val IngredientScrollSelectReset = ItemStackTemplate(Items.BARRIER, DataComponentPatch.builder().apply {
         set(DataComponents.ITEM_NAME, "<red><b>Reset (Empty)".deser().vanilla())
+        set(DataComponents.MAX_STACK_SIZE, 1)
+    }.build())
+
+    /**
+     * Shown for an ingredient that has no icon of its own (not yet configured, or a saved
+     * ingredient). It exists so the scroll list keeps ONE entry per ingredient and the submitted
+     * position stays usable as the collection index.
+     */
+    val IngredientScrollSelectPlaceholder = ItemStackTemplate(Items.LIGHT_GRAY_STAINED_GLASS_PANE, DataComponentPatch.builder().apply {
+        set(DataComponents.ITEM_NAME, "<gray>Unconfigured ingredient".deser().vanilla())
         set(DataComponents.MAX_STACK_SIZE, 1)
     }.build())
 

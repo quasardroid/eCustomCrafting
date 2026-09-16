@@ -20,7 +20,33 @@ internal class DirectoryBackupDestination(
     val path: String = settings.path
     val directory: File = File(resourceLoader.directory.toPath().resolve(path).pathString)
 
-    override fun backup(): Result<File> {
+    // The IO below can throw (ZipException on overlapping sources, IOException on permissions);
+    // turn that into a failed Result instead of letting it escape and abort every other destination.
+    override fun backup(): Result<File> = runCatching { createBackup() }.getOrElse { Result.failure(it) }
+
+    /**
+     * Deletes the oldest backups until at most [BackupSettings.DirectoryBackupDestinationSettings.keep]
+     * remain. `keep <= 0` means unlimited.
+     *
+     * The setting was documented in the shipped config ("Keep the past 8 backups") but nothing ever
+     * enforced it, so backups grew without bound.
+     */
+    private fun pruneOldBackups() {
+        val keep = settings.keep
+        if (keep <= 0) {
+            return
+        }
+        val existing = directory.listFiles()?.filter { entry ->
+            // Only touch entries this destination created: their name IS the timestamp.
+            runCatching { LocalDateTime.parse(entry.nameWithoutExtension, dateFormat) }.isSuccess
+        } ?: return
+
+        existing.sortedByDescending { LocalDateTime.parse(it.nameWithoutExtension, dateFormat) }
+            .drop(keep)
+            .forEach { it.deleteRecursively() }
+    }
+
+    private fun createBackup(): Result<File> {
         val date = LocalDateTime.now()
         val backupName = dateFormat.format(date)
 
@@ -47,6 +73,7 @@ internal class DirectoryBackupDestination(
                     }
                 }
             }
+            pruneOldBackups()
             return Result.success(zipBackupFile)
         } else {
             val backupDirectory = File(directory, backupName)
@@ -59,6 +86,7 @@ internal class DirectoryBackupDestination(
                     source.directory.copyRecursively(File(backupDirectory, source.directory.name), overwrite = true)
                 }
             }
+            pruneOldBackups()
             return Result.success(backupDirectory)
         }
     }

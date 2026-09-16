@@ -36,8 +36,10 @@ internal fun LiteralArgumentBuilder<CommandSourceStack>.recipeEditorUIEntry(disp
             .executes { ctx ->
                 val viewportl = ScafallProvider.get().viewportl
                 val executor = ctx.source.player ?: return@executes 0
+                // Create the session on the command (server) thread. Doing it inside the async block
+                // mutated the session map off-thread for no benefit.
+                CustomCraftingProvider.get().server?.recipeEditor?.getOrCreateSession(executor.uuid)
                 ScafallProvider.get().scheduler.async(CustomCraftingProvider.get()) {
-                    CustomCraftingProvider.get().server?.recipeEditor?.getOrCreateSession(executor.uuid)
                     viewportl.guiManager.getViewRuntime(executor.uuid).let { playerRuntime ->
                         playerRuntime.joinViewer(executor.uuid)
                         playerRuntime.setContent { RecipeEditorRoot() }

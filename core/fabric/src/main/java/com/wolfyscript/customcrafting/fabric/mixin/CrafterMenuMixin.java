@@ -37,7 +37,11 @@ public class CrafterMenuMixin {
 
     @Inject(at = @At("RETURN"), method = "refreshRecipeResult")
     private void exitEvalContext(CallbackInfo ci) {
-        EvaluationContextState.INSTANCE.exit();
+        // Must mirror the guard in enterEvalContext. Exiting unconditionally popped a context this
+        // method never pushed.
+        if (player instanceof net.minecraft.server.level.ServerPlayer) {
+            EvaluationContextState.INSTANCE.exit();
+        }
     }
 
 }

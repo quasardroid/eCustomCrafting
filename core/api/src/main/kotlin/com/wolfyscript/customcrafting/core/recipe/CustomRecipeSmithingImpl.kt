@@ -38,9 +38,18 @@ internal class CustomRecipeSmithingImpl(
             return null
         }
 
+        // A null result means the ingredient did not match the stack. `validIngredient` above only
+        // checked emptiness, so without these guards ANY three non-empty items match the recipe and
+        // nothing is consumed (the nonNullIngredients list would be empty).
         val matchedTemplate = evaluateIngredient(template, input.template)
-        val matchedBase = evaluateIngredient(base, input.base)
+        if (template != null && matchedTemplate == null) {
+            return null
+        }
+        val matchedBase = evaluateIngredient(base, input.base) ?: return null
         val matchedAddition = evaluateIngredient(addition, input.addition)
+        if (addition != null && matchedAddition == null) {
+            return null
+        }
 
         return DefaultDataImpl(arrayOf(matchedTemplate, matchedBase, matchedAddition))
     }

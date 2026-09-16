@@ -19,6 +19,11 @@ internal class EditorSessionImpl(
         private set
 
     override fun edit(recipeKey: Key): Result<SessionModel> {
+        // Same guard as `create`: without it, opening an existing recipe silently threw away
+        // whatever the player had in progress.
+        if (model != null) {
+            return Result.failure(IllegalStateException("Already editing a recipe of type ${model!!.recipeModel.recipeType}. Cancel and try again."))
+        }
         val recipe = CustomCraftingProvider.get().server?.recipeManager?.getRecipe(recipeKey)?.value
             ?: return Result.failure(IllegalArgumentException("Recipe $recipeKey not found"))
         val store = edit(recipe)

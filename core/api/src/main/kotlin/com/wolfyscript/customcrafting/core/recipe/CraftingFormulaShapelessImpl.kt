@@ -6,7 +6,6 @@ import com.wolfyscript.customcrafting.core.recipe.evaluation.IngredientDataImpl
 import com.wolfyscript.customcrafting.core.recipe.evaluation.RecipeEvaluationResult
 import com.wolfyscript.customcrafting.core.recipe.evaluation.RecipeInput
 import com.wolfyscript.customcrafting.core.recipe.ingredient.Ingredient
-import net.minecraft.util.ArrayListDeque
 
 internal class CraftingFormulaShapelessImpl(
     override val ingredients: List<Ingredient>,
@@ -21,68 +20,61 @@ internal class CraftingFormulaShapelessImpl(
         }
         val pickedIngredients = Array<IngredientData?>(ingredients.size) { null }
 
-        /**
-         * The path of edges that were visited so far.
-         * The indices of ingredients are offset by 1 due to the root node being at index 0.
-         */
-        val path = ArrayListDeque<Int>(ingredients.size)
-
-        /**
-         * A matrix specifying which edges between ingredients have been checked.
-         * This includes a root node from which an edge goes to each ingredient.
-         *
-         *
-         * | from \ to | A | B | C | ...
-         * | :-------: | - | :--: | :--: | -
-         * | ROOT      | 0 | 0 | 0 | ...
-         * | A         | x | 0 | 0 | ...
-         * | B         | 0 | x | 0 | ...
-         * | C         | 0 | 0 | x | ...
-         * | ...       | ... | ... | ... | ...
-         *
-         */
-        val checkedEdges: Array<Int> = Array(ingredients.size + 1) { 0 }
-
-        var index = 0
-        while (index < input.matrixData.flatItems.size) {
-            val edgeFrom = path.peek() ?: 0 // If path is empty we are at the root
-
-            // Try to match the ingredient at the current index
-            for ((ingrdRecipeIndex, ingredient) in ingredients.withIndex()) {
-                val edgeTo = 1 shl ingrdRecipeIndex
-                if (checkedEdges[edgeFrom].and(edgeTo) == edgeTo || path.contains(ingrdRecipeIndex + 1)) {
-                    continue
-                }
-                val matchedRef = ingredient.match(input.matrixData.flatItems[index]) ?: continue
-                // Found matching ingredient
-                pickedIngredients[ingrdRecipeIndex] = IngredientDataImpl(
-                    invSlot = input.matrixData.flatItemIndices[index],
-                    ingrdRecipeIndex,
-                    ingredient,
-                    matchedRef
-                )
-                index++
-                checkedEdges[edgeFrom] = checkedEdges[edgeFrom].or(edgeTo)
-                path.push(ingrdRecipeIndex + 1)
-                break
-            }
-            // If it either fails on the first item or backtracks back to the root node, then there are no ingredients left to match.
-            if (path.isEmpty()) {
-                return null
-            }
-            if (path.peek() == edgeFrom) {
-                // No matching node found. Backtrack
-                path.pop()
-                pickedIngredients[edgeFrom - 1] = null
-                index--
-            }
+        // Assign every grid item to a distinct ingredient by plain backtracking.
+        //
+        // The previous implementation memoised (previousIngredient -> nextIngredient) edges in a
+        // single matrix that was never cleared on backtrack. Whether such an edge is viable depends
+        // on the whole prefix, not just the previous node, so a pair rejected deep in one branch was
+        // permanently banned in every other branch and craftable grids were reported as no-match.
+        //
+        // Here the memo is keyed by the SET of already-consumed ingredients, which is exactly the
+        // state the remaining sub-problem depends on, so it is sound. With at most 9 ingredients the
+        // table is at most 512 entries and the search is bounded by O(2^n * n).
+        val failedStates = BooleanArray(1 shl ingredients.size)
+        if (!assignFrom(0, 0, input, pickedIngredients, failedStates)) {
+            return null
         }
+        return DefaultDataImpl(pickedIngredients)
+    }
 
-        // Make sure all ingredients are on the path, that should be the case already, so simply check for size
-        if (path.size == ingredients.size) {
-            return DefaultDataImpl(pickedIngredients)
+    /**
+     * Tries to assign the grid item at [itemIndex] (and every item after it) to an ingredient that
+     * is not yet part of [usedIngredients].
+     */
+    private fun assignFrom(
+        itemIndex: Int,
+        usedIngredients: Int,
+        input: RecipeInput.CraftingRecipeInput,
+        pickedIngredients: Array<IngredientData?>,
+        failedStates: BooleanArray,
+    ): Boolean {
+        if (itemIndex == ingredients.size) {
+            return true
         }
-        return null
+        if (failedStates[usedIngredients]) {
+            return false
+        }
+        val stack = input.matrixData.flatItems[itemIndex]
+        for ((ingrdRecipeIndex, ingredient) in ingredients.withIndex()) {
+            val ingredientBit = 1 shl ingrdRecipeIndex
+            if (usedIngredients and ingredientBit != 0) {
+                continue
+            }
+            val matchedRef = ingredient.match(stack) ?: continue
+            pickedIngredients[ingrdRecipeIndex] = IngredientDataImpl(
+                invSlot = input.matrixData.flatItemIndices[itemIndex],
+                recipeIndex = ingrdRecipeIndex,
+                selectedIngredient = ingredient,
+                matchedItemStackRef = matchedRef,
+                matrixIndex = input.matrixData.flatMatrixIndices[itemIndex],
+            )
+            if (assignFrom(itemIndex + 1, usedIngredients or ingredientBit, input, pickedIngredients, failedStates)) {
+                return true
+            }
+            pickedIngredients[ingrdRecipeIndex] = null
+        }
+        failedStates[usedIngredients] = true
+        return false
     }
 
     override fun toString(): String {

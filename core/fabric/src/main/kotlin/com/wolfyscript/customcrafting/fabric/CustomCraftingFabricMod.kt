@@ -4,6 +4,7 @@ import com.wolfyscript.customcrafting.CustomCraftingBoostrap
 import com.wolfyscript.customcrafting.core.commands.CCCommands
 import com.wolfyscript.customcrafting.core.data.DataManager
 import com.wolfyscript.customcrafting.core.sentry.setupSentry
+import com.wolfyscript.customcrafting.core.sentry.teardownSentry
 import com.wolfyscript.customcrafting.core.util.CUSTOMCRAFTING_NAMESPACE
 import com.wolfyscript.scafall.ScafallProvider
 import com.wolfyscript.scafall.identifier.Key
@@ -24,7 +25,10 @@ class CustomCraftingFabricMod : ModInitializer {
         CustomCraftingBoostrap.PATH_TO_INTERNAL_BOOTSTRAP
     )
     private val logger = LoggerFactory.getLogger(javaClass)
-    private lateinit var customCrafting: CustomCraftingFabric
+    // Nullable rather than lateinit: the shutdown handler can fire before (or without) the deferred
+    // ScafallProvider.whenReady block below ever assigned it, and reading an uninitialised lateinit
+    // there threw during server stop.
+    private var customCrafting: CustomCraftingFabric? = null
 
     init {
         setupSentry(
@@ -49,10 +53,14 @@ class CustomCraftingFabricMod : ModInitializer {
                 it.onServerAvailable {
                     logger.info("[${CUSTOMCRAFTING_NAMESPACE}] Loading server...")
 
-                    customCrafting.initServer(mcServer)
-                    customCrafting.configurationManager.load()
+                    val cc = customCrafting ?: return@onServerAvailable
+                    // Load the configuration BEFORE building the server: initServer constructs the
+                    // ResourceManager from `resourceSettings`, so with the old order it saw the
+                    // empty defaults and no source was configured.
+                    cc.configurationManager.load()
+                    cc.initServer(mcServer)
 
-                    customCrafting.server?.onLoad()
+                    cc.server?.onLoad()
                 }
             }
         }
@@ -62,12 +70,14 @@ class CustomCraftingFabricMod : ModInitializer {
         }
 
         ServerLifecycleEvents.SERVER_STOPPED.register {
-
-            customCrafting.server?.onUnload()
+            customCrafting?.server?.onUnload()
+            teardownSentry()
         }
 
         CommandRegistrationCallback.EVENT.register { dispatcher, registryAccess, env ->
-            if (env.includeDedicated) {
+            // Commands must exist in singleplayer and Open-to-LAN too; gating on
+            // includeDedicated left the mod command-less on an integrated server.
+            if (env.includeDedicated || env.includeIntegrated) {
                 logger.info("Registering CustomCraftingFabricMod commands")
                 CCCommands.registerCommands(dispatcher)
             }

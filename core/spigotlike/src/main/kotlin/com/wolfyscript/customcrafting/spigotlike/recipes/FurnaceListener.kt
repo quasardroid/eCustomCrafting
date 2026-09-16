@@ -23,6 +23,7 @@ import org.bukkit.event.inventory.FurnaceSmeltEvent
 import org.bukkit.event.inventory.FurnaceStartSmeltEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
+import java.time.Duration
 import kotlin.math.floor
 import kotlin.random.Random
 
@@ -31,7 +32,12 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
     private val backingRecipesUsedKey = NamespacedKey("customcrafting", "backing_recipes_used")
     private val customRecipesUsedKey = NamespacedKey("customcrafting", "recipes_used")
 
-    private val recipeCache = Caffeine.newBuilder().build<ScafallBlockPos, CookingRecipeCache>()
+    // Keyed by block position and only removed on a SUCCESSFUL smelt, so every furnace that ever
+    // held a custom recipe and was then broken, unloaded or left mismatched leaked an entry.
+    private val recipeCache = Caffeine.newBuilder()
+        .expireAfterAccess(Duration.ofMinutes(10))
+        .maximumSize(10_000)
+        .build<ScafallBlockPos, CookingRecipeCache>()
 
     @EventHandler
     fun onStartSmelt(event: FurnaceStartSmeltEvent) {
@@ -82,12 +88,6 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
                 val source = inventory.smelting ?: return
                 val resultStack = inventory.result
 
-                updateRecipeExperience(
-                    block,
-                    cache.bukkitRecipe,
-                    cache.recipeEvaluationResult.recipe.key
-                )
-
                 val result = recipe.result
 
                 val context = EvaluationContext.of(
@@ -120,6 +120,16 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
                 } else {
                     inventory.result = pickedStack
                 }
+
+                // Bank the usage only once the smelt is actually going through. Counting it before
+                // the two cancel checks above let a furnace with a mismatched or full result slot
+                // inflate the stored count on every retried cook cycle, and the player collected XP
+                // for smelts that never produced anything.
+                updateRecipeExperience(
+                    block,
+                    cache.bukkitRecipe,
+                    cache.recipeEvaluationResult.recipe.key
+                )
 
                 cache.recipeEvaluationResult.data.bySlot(0)?.let {
                     val matchedRef = it.matchedItemStackRef
@@ -205,6 +215,14 @@ class FurnaceListener(val customCrafting: CustomCrafting) : Listener {
             val recipeCount: Int =
                 usedBackingRecipes.getOrDefault(backingRecipe, PersistentDataType.INTEGER, 0)
             usedBackingRecipes.set(backingRecipe, PersistentDataType.INTEGER, recipeCount + 1)
+            // A sub-container is a value, not a view: without storing it back the count was thrown
+            // away and onCollectExperience never subtracted the overridden vanilla XP, so a custom
+            // recipe overriding a vanilla one paid out both.
+            rootContainer.set(
+                backingRecipesUsedKey,
+                PersistentDataType.TAG_CONTAINER,
+                usedBackingRecipes
+            )
         }
 
         // Increment custom recipe usages

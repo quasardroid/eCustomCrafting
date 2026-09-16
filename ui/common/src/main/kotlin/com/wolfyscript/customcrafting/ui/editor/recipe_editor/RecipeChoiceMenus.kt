@@ -69,20 +69,29 @@ fun StackChoicesMenu(
 
 private object CachedTags {
 
-    private var tags: List<HolderSet.Named<Item>> = emptyList()
+    private const val PAGE_SIZE = 27
 
-    val totalPages: Int get() = tags.size
+    /**
+     * Loaded once, lazily, and shared by every viewer — so it must not be a plain `var` assigned
+     * from whichever viewer's coroutine happens to ask first.
+     */
+    private val tags: List<HolderSet.Named<Item>> by lazy {
+        BuiltInRegistries.ITEM.tags
+            .sorted { holders, holders1 -> holders.key().location.compareTo(holders1.key().location) }
+            .toList()
+    }
+
+    /**
+     * Number of PAGES, not number of tags. Returning the tag count produced thousands of pages,
+     * nearly all of them empty. Reading it also used to happen before the list was populated, so it
+     * was 0 until someone had already scrolled.
+     */
+    val totalPages: Int get() = ceil(tags.size / PAGE_SIZE.toFloat()).toInt()
 
     fun getTagsSubList(fromIndex: Int, toIndex: Int): List<HolderSet.Named<Item>> {
-        if (tags.isEmpty()) {
-            tags = BuiltInRegistries.ITEM.tags
-                .sorted { holders, holders1 -> holders.key().location.compareTo(holders1.key().location) }
-                .toList()
-        }
-        if (fromIndex > toIndex || toIndex > tags.size) {
-            return emptyList()
-        }
-        return tags.subList(fromIndex, toIndex)
+        val start = fromIndex.coerceIn(0, tags.size)
+        val end = toIndex.coerceIn(start, tags.size)
+        return tags.subList(start, end)
     }
 
 }

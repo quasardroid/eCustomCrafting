@@ -62,10 +62,13 @@ internal class CraftingFormulaShapedImpl(
             val ingredient = ingredients[ingrdRecipeIndex]
             val matchedRef = ingredient.match(stack) ?: return null
             ingredientData[i] = IngredientDataImpl(
-                matrix.itemIndices[i],
-                i,
-                ingredient,
-                matchedRef
+                invSlot = matrix.itemIndices[i],
+                recipeIndex = i,
+                selectedIngredient = ingredient,
+                matchedItemStackRef = matchedRef,
+                // For a shaped recipe the shape index and the trimmed-matrix index coincide, but be
+                // explicit so `shrink` never has to rely on that.
+                matrixIndex = i,
             )
         }
         return DefaultDataImpl(ingredientData)
@@ -90,7 +93,6 @@ internal class CraftingFormulaShapedImpl(
 
         init {
             var original: Array<Int> = Array(height * width) { -1 }
-            var index = 0
             var minRow = height - 1
             var maxRow = 0
             var minColumn = width - 1
@@ -98,6 +100,9 @@ internal class CraftingFormulaShapedImpl(
             for ((r, row) in rows.withIndex()) {
                 var emptyRow = true
                 for ((c, column) in row.withIndex()) {
+                    // Rows may be shorter than the widest row; index off (r, c) rather than a
+                    // running counter, or a short row shifts every following row left.
+                    val index = r * width + c
                     if (column.isWhitespace()) {
                         original[index] = -1
                     } else {
@@ -112,7 +117,6 @@ internal class CraftingFormulaShapedImpl(
                         }
                         original[index] = i
                     }
-                    index++
                 }
 
                 if (!emptyRow) {
@@ -121,15 +125,18 @@ internal class CraftingFormulaShapedImpl(
                 }
             }
 
-            if (trim && (maxRow < width - 1 || maxColumn < height - 1 || minRow > 0 || minColumn > 0)) {
-                // Trim the leading and trailing empty rows and columns
+            if (trim && (maxRow < height - 1 || maxColumn < width - 1 || minRow > 0 || minColumn > 0)) {
+                // Trim the leading and trailing empty rows and columns.
+                // The stride of the ORIGINAL array is the untrimmed width, so capture it before
+                // `width` is reassigned to the trimmed width below.
+                val originalWidth = width
                 width = maxColumn - minColumn + 1
                 height = maxRow - minRow + 1
-                var trimmed = Array(width * height) {
+                val trimmed = Array(width * height) {
                     // Copy the values from the original array by offsetting the row and column back to the original
                     // <Row in trimmed shape> + rMin = <Row in original shape>
                     // <Column in trimmed shape> + cMin = <Column in original shape>
-                    original[(it / width) + minRow + (it % width) + minColumn]
+                    original[((it / width) + minRow) * originalWidth + ((it % width) + minColumn)]
                 }
                 original = trimmed
             }

@@ -12,12 +12,11 @@ import com.wolfyscript.scafall.registry.referenced
 object RecipeTypeSpecificStateFactories {
 
     val crafting = create<CustomRecipeCrafting>("crafting")
-    val cooking = create<CustomRecipeCrafting>("cooking")
-    val mixing = create<CustomRecipeCrafting>("mixing")
-    val repairing = create<CustomRecipeCrafting>("repairing")
-    val smithing = create<CustomRecipeCrafting>("smithing")
-    val stonecutting = create<CustomRecipeCrafting>("stonecutting")
-    val grinding = create<CustomRecipeCrafting>("grinding")
+
+    // `cooking`, `mixing`, `repairing`, `smithing`, `stonecutting` and `grinding` used to be declared
+    // here as well — all six copy-pasted as `create<CustomRecipeCrafting>`, so they claimed the wrong
+    // recipe type, none of them had a factory registered in EditorRegistries, and nothing referenced
+    // them. Declare each one back alongside its real factory, with its own type parameter.
 
     private inline fun <reified T : CustomRecipe<*, *>> create(key: String): ValueReference<RecipeModel.RecipeTypeSpecificModel.Factory<*>, RecipeModel.RecipeTypeSpecificModel.Factory<T>> {
         return EditorRegistryTypes.recipeTypeSpecificModelFactories.key

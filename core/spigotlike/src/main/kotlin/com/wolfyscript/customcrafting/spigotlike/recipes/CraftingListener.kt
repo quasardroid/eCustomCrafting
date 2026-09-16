@@ -22,6 +22,7 @@ import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
+import org.bukkit.event.inventory.ClickType
 import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.event.inventory.InventoryCloseEvent
 import org.bukkit.event.inventory.PrepareItemCraftEvent
@@ -32,6 +33,17 @@ import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.Plugin
 import java.util.UUID
 import kotlin.random.Random
+
+/**
+ * The click types whose result collection this listener implements (cursor pickup and quick-craft).
+ * Anything else is cancelled rather than silently mishandled.
+ */
+private val COLLECTABLE_CLICKS = setOf(
+    ClickType.LEFT,
+    ClickType.RIGHT,
+    ClickType.SHIFT_LEFT,
+    ClickType.SHIFT_RIGHT,
+)
 
 class CraftingListener(val plugin: Plugin, val customCrafting: CustomCrafting) : Listener {
 
@@ -61,6 +73,13 @@ class CraftingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
         val cursor = event.cursor
         if (resultItem?.type == Material.AIR || (cursor.type != Material.AIR && !cursor.isSimilar(resultItem) && !event.isShiftClick)) {
             // Make sure we don't consume the recipe if there is no result or the cursor cannot pick up the item
+            event.isCancelled = true
+            return
+        }
+        // Only the click types this handler can actually service may proceed. A NUMBER_KEY (hotbar
+        // swap), DROP or DOUBLE_CLICK on the result slot always has an empty cursor, so it used to
+        // pass the check above and the result was dumped on the cursor instead of the hotbar/ground.
+        if (event.click !in COLLECTABLE_CLICKS) {
             event.isCancelled = true
             return
         }
@@ -99,6 +118,12 @@ class CraftingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
     fun onPreCraft(e: PrepareItemCraftEvent) {
         val player = e.view.player as Player
         try {
+            // Drop the previous evaluation first. Only the match branch below writes this cache, so
+            // a grid change from "custom recipe R matches" to "only a vanilla recipe matches" left R
+            // behind and the next result-slot click handed out R and shrank the grid by R's
+            // ingredients, nulling every slot R does not know about.
+            craftingDataCache.invalidate(player.uniqueId)
+
             val matrix = CraftingMatrixData.of(e.inventory.matrix.map { it?.wrap() ?: ItemStack(Material.AIR).wrap() }.toList())
             val input = RecipeInput.CraftingRecipeInput.of(matrix)
             matrixDataCache.put(player.uniqueId, matrix)
@@ -175,7 +200,19 @@ class CraftingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
     ): Int {
         if (event.clickedInventory == null) return 0
         val recipeResult = craftingData.recipe.value?.result ?: return 0
-        return collectResultAndRunActions(event, bukkitPlayer.inventory, craftingData, recipeResult, matrixData.flatItems, context, Random(getCraftSeed(bukkitPlayer)))
+        return collectResultAndRunActions(
+            event,
+            bukkitPlayer.inventory,
+            craftingData,
+            recipeResult,
+            // Resolve each ingredient's stack by the matrix position it matched, not by its position
+            // in the recipe's ingredient list.
+            { matrixData.matrix.getOrNull(it.matrixIndex) },
+            context,
+            Random(getCraftSeed(bukkitPlayer)),
+            // `recipe.shrink` below runs the result actions; do not run them twice.
+            runResultActions = false,
+        )
     }
 
     fun getCraftSeed(bukkitPlayer: Player): Long {

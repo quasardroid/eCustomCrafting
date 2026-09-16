@@ -23,6 +23,9 @@ internal class CustomRecipeGrindingImpl(
         input: RecipeInput.GrindingRecipeInput,
         context: EvaluationContext,
     ): RecipeEvaluationResult.GrindingRecipeData? {
+        if (!conditions.areSatisfied(context)) {
+            return null
+        }
 
         var baseStack = input.base
         var additionStack = input.addition
@@ -52,7 +55,12 @@ internal class CustomRecipeGrindingImpl(
             IngredientDataImpl(baseInvSlot, 0, base, baseMatch)
         } ?: return null
 
-        if (addition == null && !emptyAddition || addition != null && emptyAddition) {
+        // Re-test against the CURRENT addition stack: when the single ingredient was placed in the
+        // addition slot the block above moved it into `baseStack` and cleared `additionStack`, but
+        // the stale `emptyAddition` still says "occupied" and would reject the very case that
+        // block exists to support.
+        val emptyAdditionNow = additionStack == null || additionStack.isEmpty
+        if (addition == null && !emptyAdditionNow || addition != null && emptyAdditionNow) {
             return null
         }
         val matchedAddition = addition?.match(additionStack!!)?.let { additionMatch ->

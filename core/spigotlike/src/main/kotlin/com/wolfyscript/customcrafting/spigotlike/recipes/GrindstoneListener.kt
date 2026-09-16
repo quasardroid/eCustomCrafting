@@ -25,6 +25,7 @@ import org.bukkit.event.inventory.PrepareGrindstoneEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.GrindstoneInventory
 import org.bukkit.persistence.PersistentDataType
+import java.time.Duration
 import java.util.UUID
 import kotlin.math.max
 import kotlin.math.min
@@ -32,7 +33,10 @@ import kotlin.random.Random
 
 class GrindstoneListener(val customCrafting: CustomCrafting) : Listener {
 
-    private val recipeCache = Caffeine.newBuilder().build<UUID, RecipeEvaluationResult<RecipeEvaluationResult.GrindingRecipeData, CustomRecipeGrinding>>()
+    private val recipeCache = Caffeine.newBuilder()
+        .expireAfterAccess(Duration.ofMinutes(10))
+        .maximumSize(1_000)
+        .build<UUID, RecipeEvaluationResult<RecipeEvaluationResult.GrindingRecipeData, CustomRecipeGrinding>>()
 
     @EventHandler
     fun onCollectResult(event: InventoryClickEvent) {
@@ -69,13 +73,18 @@ class GrindstoneListener(val customCrafting: CustomCrafting) : Listener {
         } else if (cursor.type == Material.AIR) {
             event.view.setCursor(result.clone())
             event.currentItem = null
-        } else if (!cursor.isSimilar(result)) {
+        } else if (cursor.isSimilar(result)) {
+            // The test used to be inverted: it merged the result onto a cursor holding a DIFFERENT
+            // item, and when the cursor actually could be merged no branch ran at all, so the
+            // ingredients below were consumed without the player collecting anything.
             val increasedAmount = cursor.amount + result.amount
             if (increasedAmount > cursor.maxStackSize) {
                 return
             }
             cursor.amount = increasedAmount
             event.currentItem = null
+        } else {
+            return // cursor holds a different item; the result cannot be collected
         }
 
         val context =
@@ -164,7 +173,8 @@ class GrindstoneListener(val customCrafting: CustomCrafting) : Listener {
                     val curAmount = currentItem.amount
                     val possible = min(cursor.amount, currentItem.maxStackSize - curAmount)
                     event.currentItem!!.amount += possible
-                    event.cursor.amount = min(0, cursor.amount - possible)
+                    // `min(0, ...)` is never positive and wiped whatever was left on the cursor.
+                    event.cursor.amount = max(0, cursor.amount - possible)
                     event.isCancelled = true
                     return
                 }
@@ -211,9 +221,33 @@ class GrindstoneListener(val customCrafting: CustomCrafting) : Listener {
 
         // Quick move items from bottom inv
         if (event.isShiftClick) {
-            val remains = topInventory.addItem(currentItem!!)
-            event.currentItem = remains.get(0)
+            val moving = currentItem ?: return
+            if (moving.type == Material.AIR) {
+                return
+            }
             event.isCancelled = true
+            // `addItem` treats the whole top inventory as fair game, including the RESULT slot (2),
+            // which let a player shift-click arbitrary items straight into the output. Fill only
+            // the two input slots.
+            val remaining = moving.clone()
+            for (slot in 0..1) {
+                if (remaining.amount <= 0) {
+                    break
+                }
+                val existing = topInventory.getItem(slot)
+                if (existing == null || existing.type == Material.AIR) {
+                    topInventory.setItem(slot, remaining.clone())
+                    remaining.amount = 0
+                } else if (existing.isSimilar(remaining)) {
+                    val transfer = min(remaining.amount, existing.maxStackSize - existing.amount)
+                    if (transfer > 0) {
+                        existing.amount += transfer
+                        topInventory.setItem(slot, existing)
+                        remaining.amount -= transfer
+                    }
+                }
+            }
+            event.currentItem = if (remaining.amount <= 0) null else remaining
             return
         }
 

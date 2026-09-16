@@ -77,26 +77,28 @@ public class GrindstoneResultSlotsMixin implements GrindstoneResultSlotsExt {
             fixedResultProcess.getResult().runActions(context, 1);
         }
 
+        // Write the shrunk stack back: `shrink` returns what should remain, and dropping it meant a
+        // "replace" ingredient was never consumed.
         var base = data.bySlot(0);
         if (base != null) {
-            base.getSelectedIngredient().shrink(
+            grindstoneMenu.getSlot(0).set(base.getSelectedIngredient().shrink(
                 ItemStackWrappersKt.wrap(grindstoneMenu.getSlot(0).getItem()),
                 1,
                 base.getMatchedItemStackRef(),
                 context,
                 resultInfo
-            );
+            ).unwrap());
         }
 
         var addition = data.bySlot(1);
         if (addition != null) {
-            addition.getSelectedIngredient().shrink(
+            grindstoneMenu.getSlot(1).set(addition.getSelectedIngredient().shrink(
                 ItemStackWrappersKt.wrap(grindstoneMenu.getSlot(1).getItem()),
                 1,
                 addition.getMatchedItemStackRef(),
                 context,
                 resultInfo
-            );
+            ).unwrap());
         }
 
         resultInfo = null;

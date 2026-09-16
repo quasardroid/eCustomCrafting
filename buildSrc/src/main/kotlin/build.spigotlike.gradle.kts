@@ -40,9 +40,9 @@ dependencies {
     compileOnly(sharedLibs.netty.all)
     compileOnly(sharedLibs.bundles.exposed)
     compileOnly(sharedLibs.bundles.database.drivers)
-
-    api(libs.protocollib)
-    api(libs.bstats)
+    // protocollib and bstats were declared, relocated and listed in plugin.yml `libraries`, but
+    // neither appears anywhere in the source. Reinstate them together when metrics/packet code
+    // actually lands.
     compileOnly(libs.mythic.dist)
     compileOnly(libs.placeholderapi)
     compileOnly(libs.oraxen)

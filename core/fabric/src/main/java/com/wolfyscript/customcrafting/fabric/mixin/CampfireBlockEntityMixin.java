@@ -129,7 +129,7 @@ public abstract class CampfireBlockEntityMixin extends BlockEntity {
     }
 
     @Redirect(method = "cookTick", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/NonNullList;set(ILjava/lang/Object;)Ljava/lang/Object;"))
-    private static <E> E preventInputReset(NonNullList<E> instance, int index, E element, @Local(name = "input") SingleRecipeInput input) {
+    private static <E> E preventInputReset(NonNullList<E> instance, int index, E element, @Local /* was: name="input" */ SingleRecipeInput input) {
         var resultInfo = ((RecipeInputSingleSlotCustomExt) (Object) input).getResultInfo();
         if (resultInfo == null || resultInfo.getRecipe().getValue() == null) {
             return instance.set(index, element);

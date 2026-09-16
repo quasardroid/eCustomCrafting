@@ -59,14 +59,18 @@ class CrafterListener(val plugin: Plugin, val customCrafting: CustomCrafting) : 
             )
         }
 
-        val data = if (previousRecipe != null) {
-            previousRecipe.value?.evaluate(input, context)?.let { RecipeEvaluationResult.of(previousRecipe, it) }
-        } else {
-            customCrafting.server!!.recipeManager.evaluateRecipesOfType(
-                RecipeTypes.crafting.resolveOrThrow(),
-                input,
-                context
-            )
+        // The cached recipe is a fast path, not the answer. When it no longer matches we must still
+        // do the full lookup: the PDC is only cleared by a PLAYER clicking the crafter inventory, so
+        // a hopper-fed crafter whose ingredients changed jammed forever on the stale key.
+        val cachedData = previousRecipe?.value?.evaluate(input, context)
+            ?.let { RecipeEvaluationResult.of(previousRecipe, it) }
+        val data = cachedData ?: customCrafting.server!!.recipeManager.evaluateRecipesOfType(
+            RecipeTypes.crafting.resolveOrThrow(),
+            input,
+            context
+        )
+        if (cachedData == null && previousRecipeKey != null) {
+            state.persistentDataContainer.remove(previousRecipeContainerKey)
         }
         val recipe = data?.recipe?.value
 
@@ -79,10 +83,11 @@ class CrafterListener(val plugin: Plugin, val customCrafting: CustomCrafting) : 
             )
 
             val inventory = state.snapshotInventory
+            // `shrink` already runs the result actions; calling them again here paid out every
+            // reward twice per craft.
             recipe.shrink(input, data, context, 1) { index, new ->
                 inventory.setItem(index, new.unwrapSpigot())
             }
-            recipe.result.runActions(context)
             val resultStack = recipe.result.compute(data, context, Random)
             event.result = resultStack.unwrapSpigot()
 

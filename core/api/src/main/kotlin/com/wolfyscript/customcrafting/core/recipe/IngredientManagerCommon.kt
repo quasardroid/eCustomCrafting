@@ -50,20 +50,24 @@ internal class IngredientManagerCommon(val customCrafting: CustomCrafting) : Ing
     }
 
     override fun onInitialLoad(resourceLoader: ResourceLoader) {
+        // Each load cycle rebuilds this list; see RecipeManagerCommon for the same reasoning.
+        ingredientsAwaitingDependencies.clear()
         resourceLoader.sources.forEach { source ->
             source.load(DataType.Ingredients) {
-                customCrafting.logger.info("${LOG_PREFIX}loaded: ${it.key} -> ${it.value}")
+                customCrafting.logger.debug("{}loaded: {} -> {}", LOG_PREFIX, it.key, it.value)
                 ingredientsAwaitingDependencies.add(it)
             }
         }
     }
 
     override fun onReload(resourceLoader: ResourceLoader) {
-        // TODO
+        onInitialLoad(resourceLoader)
     }
 
     override fun onFinalize(resourceLoader: ResourceLoader) {
-        val previouslyLoaded = this.ingredientsLoadedByCC
+        // Snapshot, do not alias: `clear()` on the next line would otherwise empty this too and
+        // `subtract` below would always yield nothing, so deleted ingredients stayed registered.
+        val previouslyLoaded = this.ingredientsLoadedByCC.toSet()
         this.ingredientsLoadedByCC.clear()
 
         verifyIngredientsAndLoad()
@@ -78,6 +82,13 @@ internal class IngredientManagerCommon(val customCrafting: CustomCrafting) : Ing
     private fun verifyIngredientsAndLoad() {
         customCrafting.logger.info("${LOG_PREFIX}Registering ${ingredientsAwaitingDependencies.size} ingredients")
         for (loadedIngredient in ingredientsAwaitingDependencies) {
+            // Idempotent on purpose: this method runs both from the onDependencyInitialized hook and
+            // again from onFinalize over the SAME queue. Dropping the previous entry first turns the
+            // second pass into a replace; otherwise registerIngredient reports a duplicate key and
+            // throws, aborting every ingredient after it.
+            // The queue itself must NOT be drained here — onFinalize rebuilds ingredientsLoadedByCC
+            // from it to work out which ingredients disappeared.
+            ingredients.remove(loadedIngredient.key)
             registerIngredient(loadedIngredient.key, loadedIngredient.value)
             ingredientsLoadedByCC.add(loadedIngredient.key)
         }

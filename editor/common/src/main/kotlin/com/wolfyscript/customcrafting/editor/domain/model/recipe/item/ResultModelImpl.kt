@@ -7,6 +7,8 @@ class ResultModelImpl(
     override val choices: RecipeChoicesModel = RecipeChoicesModelImpl(),
     override val actions: MutableList<ResultActionModel<*>> = mutableListOf(),
     override val modifier: RecipeItemModifierModel = RecipeItemModifierModelImpl(),
+    override val bulkActions: MutableList<ResultActionModel<*>> = mutableListOf(),
+    override var alwaysKeepPrevious: Boolean = false,
 ) : ResultModel {
 
     override fun complete(): Result<RecipeResult> {
@@ -21,15 +23,26 @@ class ResultModelImpl(
             return Result.failure(IllegalStateException("Failed to complete result", it))
         }
 
-        // TODO
+        // The editor's own action lists used to be dropped here, so any action configured in the
+        // editor silently never made it into the saved recipe.
+        val completedActions = actions.mapIndexed { index, action ->
+            action.complete().getOrElse {
+                return Result.failure(IllegalStateException("Failed to complete result: invalid action at index $index", it))
+            }
+        }
+        val completedBulkActions = bulkActions.mapIndexed { index, action ->
+            action.complete().getOrElse {
+                return Result.failure(IllegalStateException("Failed to complete result: invalid bulk action at index $index", it))
+            }
+        }
 
         return Result.success(
             RecipeResult.of(
                 choices = recipeChoices,
                 modifier = itemModifier,
-                actions = mutableListOf(),
-                bulkActions = mutableListOf(),
-                alwaysKeepPrevious = false
+                actions = completedActions.toMutableList(),
+                bulkActions = completedBulkActions.toMutableList(),
+                alwaysKeepPrevious = alwaysKeepPrevious
             )
         )
     }

@@ -13,7 +13,6 @@ interface UIIngredientPreview {
 
     data class Custom(
         override val icon: ItemStackSnapshot,
-        val replaceWithRemains: Boolean,
     ) : UIIngredientPreview
 
     data class Saved(
@@ -24,9 +23,10 @@ interface UIIngredientPreview {
 
 fun IngredientModel.toPreview(): UIIngredientPreview? {
     return when (this) {
+        // `replaceWithRemains` was dropped from the model: it never reached the saved recipe, and
+        // the remainder is determined by the ingredient's consumer.
         is IngredientModel.CustomIngredientModel -> UIIngredientPreview.Custom(
             choices.stacks.firstOrNull()?.create()?.snapshot() ?: ItemStack.EMPTY.snapshot(),
-            replaceWithRemains
         )
 
         is IngredientModel.SavedIngredientModel -> UIIngredientPreview.Saved(

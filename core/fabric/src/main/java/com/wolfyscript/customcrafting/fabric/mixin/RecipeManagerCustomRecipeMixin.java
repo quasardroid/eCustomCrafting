@@ -42,6 +42,12 @@ public abstract class RecipeManagerCustomRecipeMixin implements RecipeManagerCus
 
         // Reload the custom recipes when the vanilla resources are reloaded.
         // Not called on initial startup, since CustomCrafting is not loaded yet.
+        //
+        // NOTE: the datapack reload runs `prepare` on a background worker, so this body executes
+        // off the game thread. It is safe because it only READS CustomCrafting's recipe index —
+        // which is held in a @Volatile field (RecipeManagerCommon.index) — and builds a brand new
+        // RecipeMap, touching no server state. Do not add anything here that mutates the server,
+        // the level, or a block entity.
         if (CustomCraftingProvider.Companion.registered()) {
             CustomCraftingProvider.Companion.get().getLogger().info("Registering Proxy Recipes");
             List<RecipeHolder<?>> newList = new ArrayList<>(current.values());

@@ -141,7 +141,10 @@ fun IngredientEditor(
             IngredientUseCases.Matcher.Set(getIngredientsUseCase, setIngredientUseCase),
         )
     }
-    var currentSubMenu: SubMenu? by mutableStateOf(null)
+    // Must be remembered, keyed by the ingredient being edited. Without `remember` the state was
+    // re-created on every recomposition — and the click handlers below trigger one — so it was
+    // always back to null by the time `when (currentSubMenu)` ran and no submenu ever opened.
+    var currentSubMenu: SubMenu? by remember(index) { mutableStateOf<SubMenu?>(null) }
     val choicesState by store.choices.collectAsState()
     val tagsState by store.tags.collectAsState()
     val matcher by store.matcher.collectAsState()

@@ -13,7 +13,7 @@ import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.server.MinecraftServer
 import java.io.File
 
-class CustomCraftingServerFabric(customCrafting: CustomCrafting, val minecraftServer: MinecraftServer) :
+class CustomCraftingServerFabric(val customCrafting: CustomCrafting, val minecraftServer: MinecraftServer) :
     CustomCraftingServer {
 
     override val resourceManager: ResourceManager = ResourceManager.createNewForDir(
@@ -33,6 +33,28 @@ class CustomCraftingServerFabric(customCrafting: CustomCrafting, val minecraftSe
         }
 
         (minecraftServer.recipeManager as RecipeManagerCustomRecipesExt).registerProxyRecipes()
+    }
+
+    /**
+     * Called from the reload, off the main thread, once the new recipes are parsed and indexed.
+     *
+     * `registerProxyRecipes` rebuilds the server's RecipeMap and calls `finalizeRecipeLoading`, so it
+     * must run on the server thread; hop there explicitly rather than doing it on the reload thread.
+     */
+    override fun onRecipesReloaded() {
+        // NOTE: `recipe_book.conf: registerPlaceholders` is deliberately NOT honoured here. On
+        // Fabric the proxy recipes are not a recipe-book convenience — they are how custom recipes
+        // enter the vanilla RecipeMap in the first place, so skipping them would disable custom
+        // recipes far more broadly than on Spigot/Paper. The option is documented as Spigot-only.
+        if (!customCrafting.configurationManager.recipeBookSettings.registerPlaceholders) {
+            customCrafting.logger.warn(
+                "[Recipes] recipe_book.conf: registerPlaceholders = false is ignored on Fabric; " +
+                        "the proxy recipes are required for custom recipes to work at all here."
+            )
+        }
+        ScafallProvider.get().scheduler.sync(customCrafting) {
+            (minecraftServer.recipeManager as RecipeManagerCustomRecipesExt).registerProxyRecipes()
+        }
     }
 
     override fun onUnload() {

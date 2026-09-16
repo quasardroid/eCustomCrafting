@@ -23,22 +23,44 @@ import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.inventory.InventoryClickEvent
+import org.bukkit.event.inventory.InventoryCloseEvent
 import org.bukkit.event.inventory.PrepareAnvilEvent
+import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.AnvilInventory
 import org.bukkit.inventory.view.AnvilView
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.Plugin
+import java.time.Duration
 import java.util.UUID
 import kotlin.random.Random
 
 class AnvilListener(val plugin: Plugin, val customCrafting: CustomCrafting) : Listener {
 
-    private val recipeCache = Caffeine.newBuilder().build<UUID, RecipeEvaluationResult<RecipeEvaluationResult.RepairingRecipeData, CustomRecipeRepairing>>()
+    // Bounded: this is keyed by player UUID and was only ever evicted on a completed repair, so
+    // every player who merely opened an anvil left an entry behind for the life of the server.
+    private val recipeCache = Caffeine.newBuilder()
+        .expireAfterAccess(Duration.ofMinutes(10))
+        .maximumSize(1_000)
+        .build<UUID, RecipeEvaluationResult<RecipeEvaluationResult.RepairingRecipeData, CustomRecipeRepairing>>()
+
+    @EventHandler
+    fun onCloseInv(event: InventoryCloseEvent) {
+        recipeCache.invalidate(event.player.uniqueId)
+    }
+
+    @EventHandler
+    fun onQuit(event: PlayerQuitEvent) {
+        recipeCache.invalidate(event.player.uniqueId)
+    }
 
     @EventHandler
     fun onPrepare(event: PrepareAnvilEvent) {
         val inventory = event.inventory
         val player = event.view.player as Player
+
+        // Drop the previous evaluation before re-evaluating, like the smithing and grindstone
+        // listeners do; otherwise a no-match leaves a stale recipe behind.
+        recipeCache.invalidate(player.uniqueId)
 
         val base = inventory.getItem(0) ?: return
         if (base.type == Material.AIR) {
@@ -95,13 +117,15 @@ class AnvilListener(val plugin: Plugin, val customCrafting: CustomCrafting) : Li
 
         val cursor = event.cursor
 
-        // A quick implementation to collect the result.
+        // Collect the result. Exactly ONE of these branches may deliver the item, and any branch
+        // that cannot deliver it must return before levels and ingredients are consumed below.
         if (event.isShiftClick) {
+            // Shift-click puts the result in the inventory. It must NOT fall through to the cursor
+            // branches as well — doing so handed the player the item twice.
             if (event.view.bottomInventory.addItem(resultStack).isNotEmpty()) {
-                return
+                return // does not fit in the inventory. cancel recipe processing.
             }
-        }
-        if (cursor.type == Material.AIR) {
+        } else if (cursor.type == Material.AIR) {
             Bukkit.getScheduler().runTask(plugin, Runnable {
                 event.view.setCursor(resultStack)
             })
@@ -114,6 +138,11 @@ class AnvilListener(val plugin: Plugin, val customCrafting: CustomCrafting) : Li
                 // since this is called next tick, the cursor might have changed, so use the latest
                 event.view.cursor.amount += resultStack.amount
             })
+        } else {
+            // The cursor holds a different item, so the result cannot be picked up at all.
+            // Falling through here charged the levels, consumed the ingredients and destroyed
+            // the result.
+            return
         }
 
         // At this point, the result was successfully picked up and all requirements are satisfied.

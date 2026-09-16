@@ -13,7 +13,7 @@ import org.slf4j.Logger
 class CustomCraftingPaper(val plugin: Plugin, override val logger: Logger) : CustomCraftingCommon() {
 
     override val configurationManager = ConfigurationManagerImpl(this, plugin.dataFolder)
-    override val dataManager: DataManager = DataManager.createNewForDir(this, plugin.dataFolder)
+    override val dataManager: DataManager = DataManager.createNewForDir(plugin.dataFolder)
 
     override fun onInit() {
         Sentry.configureScope { scope ->

@@ -3,6 +3,8 @@ package com.wolfyscript.customcrafting.core.registry
 import com.wolfyscript.customcrafting.core.recipe.*
 import com.wolfyscript.customcrafting.core.recipe.action.CommandResultAction
 import com.wolfyscript.customcrafting.core.recipe.action.ResultAction
+import com.wolfyscript.customcrafting.core.recipe.condition.Condition
+import com.wolfyscript.customcrafting.core.recipe.modifier.Transformation
 import com.wolfyscript.customcrafting.core.recipe.ingredient.*
 import com.wolfyscript.scafall.config.jackson.registerTypeRegistry
 import com.wolfyscript.scafall.identifier.Key
@@ -90,6 +92,17 @@ class CustomCraftingRegistriesCommon : CustomCraftingRegistries {
         registerTypeRegistry(
             IngredientRemainder::class.java,
             get(CustomCraftingRegistryTypes.ingredientRemainders.key).getOrThrow()
+        )
+        // Condition and Transmuter carry the same @JsonTypeInfo/@JsonTypeIdResolver pair as their
+        // siblings above and their KDoc advertises third-party registration, but without binding
+        // the registry here Jackson cannot resolve their type ids and such a recipe fails to load.
+        registerTypeRegistry(
+            Condition::class.java,
+            get(CustomCraftingRegistryTypes.recipeConditionTypes.key).getOrThrow()
+        )
+        registerTypeRegistry(
+            Transformation.Transmuter::class.java,
+            get(CustomCraftingRegistryTypes.recipeItemTransmuters.key).getOrThrow()
         )
     }
 

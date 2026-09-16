@@ -55,7 +55,6 @@ tasks {
         // So to be sure nothing else slips in, just accept dependencies from the shadow configuration.
         configurations = listOf(project.configurations.shadow.get())
         archiveFileName = "${customArchiveName}.jar"
-        finalizedBy("fabric_copy")
 
         dependencies {
             include(project(project.projects.core.coreApi))
@@ -86,9 +85,16 @@ minecraftServers {
             version.set(sharedLibs.versions.minecraft.get())
             type.set("FABRIC")
             imageVersion.set("java${sharedLibs.versions.jdk.get()}")
-            ports.add("25569:25565")
+            // Distinct host port: the spigot test server already binds 25569.
+            ports.add("25571:25565")
             extraEnv.put("MODRINTH_PROJECTS", "fabric-api, fabric-language-kotlin")
             extraEnv.put("FABRIC_LOADER_VERSION", sharedLibs.versions.fabric.loader.get())
         }
     }
+}
+
+// The docker test-server copy must NOT be chained onto shadowJar: a plain `gradlew build` then
+// wrote jars into the developer's home directory. Only copy when the test server is started.
+tasks.named("fabric_run") {
+    dependsOn(tasks.named("fabric_copy"))
 }

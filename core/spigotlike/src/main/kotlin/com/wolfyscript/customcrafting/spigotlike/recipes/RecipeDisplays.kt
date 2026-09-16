@@ -16,14 +16,11 @@ import org.bukkit.inventory.ShapelessRecipe
 
 const val DISPLAY_RECIPE_PREFIX = "cc_display."
 
-fun registerDisplayRecipes(recipes: Collection<RecipeReference<*>>) {
-    for (recipe in recipes) {
-        val display = recipe.toDisplay() ?: continue
-        if (Bukkit.getRecipe((display as Keyed).key) != null) {
-            Bukkit.removeRecipe((display as Keyed).key)
-        }
-        Bukkit.addRecipe(display)
-    }
+/**
+ * Builds the Bukkit display recipes for [recipes]. Pure data; safe off the main thread.
+ */
+fun buildDisplayRecipes(recipes: Collection<RecipeReference<*>>): List<Recipe> {
+    return recipes.mapNotNull { it.toDisplay() }
 }
 
 fun Recipe.isDisplay(): Boolean {
@@ -34,6 +31,15 @@ fun Key.toDisplayRecipeKey(): NamespacedKey {
     return NamespacedKey(this.namespace, "$DISPLAY_RECIPE_PREFIX${this.value}")
 }
 
+/**
+ * NOTE: display recipes are currently INERT — this always returns null, because the `when` result is
+ * discarded and the function falls through to `return null`.
+ *
+ * It is deliberately left that way rather than "fixed" here: [CustomRecipeCrafting.toDisplay] below
+ * builds its key with `toPlaceholderRecipeKey()` instead of [toDisplayRecipeKey], so simply returning
+ * the value would make every display recipe overwrite the placeholder registered under the same key.
+ * Wire both up together.
+ */
 fun RecipeReference<*>.toDisplay(): Recipe? {
     when (val recipe = value) {
         is CustomRecipeCrafting -> recipe.toDisplay(key)

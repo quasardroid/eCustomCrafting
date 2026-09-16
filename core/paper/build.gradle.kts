@@ -44,7 +44,7 @@ tasks {
         manifest {
             attributes["paperweight-mappings-namespace"] = "mojang"
         }
-        relocate("org.bstats", "com.wolfyscript.customcrafting.bukkit.metrics")
+        // bstats is not a dependency any more (it was never used); nothing to relocate.
         relocate("io.sentry", "com.wolfyscript.customcrafting.core.sentry")
 //        relocate("com.fasterxml.jackson", "com.wolfyscript.scafall.lib.jackson")
     }
@@ -59,7 +59,9 @@ artifacts {
 }
 
 bukkitPluginYaml {
-    name = "customcrafting"
+    // Must match core/spigot: a differing plugin name gives the two jars DIFFERENT data folders,
+    // so a server that switches from Spigot to Paper appears to lose all its recipes.
+    name = "CustomCrafting"
     version = project.version.toString()
     main = "com.wolfyscript.customcrafting.paper.PaperLoaderPlugin"
     apiVersion = sharedLibs.versions.minecraft.get() // Only support the latest Minecraft version!
@@ -67,9 +69,12 @@ bukkitPluginYaml {
     depend.add("scafall")
 
     libraries.apply {
-//        libs.bundles.exposed.get().forEach {
-//            add(it.toString())
-//        }
+// Exposed is used at RUNTIME by core/api (the SQL resource source) but is not shaded into
+        // this jar, so it must be declared here or the plugin hits NoClassDefFoundError.
+        // NOTE: the accessor is `sharedLibs`; gradle/libs.versions.toml has no [bundles] section.
+        sharedLibs.bundles.exposed.get().forEach {
+            add(it.toString())
+        }
         sharedLibs.bundles.database.drivers.get().forEach {
             add(it.toString())
         }
@@ -77,7 +82,6 @@ bukkitPluginYaml {
         addAll(
             sharedLibs.typesafe.config.get().toString(),
             sharedLibs.caffeine.get().toString(),
-            libs.bstats.get().toString(),
         )
     }
 }
