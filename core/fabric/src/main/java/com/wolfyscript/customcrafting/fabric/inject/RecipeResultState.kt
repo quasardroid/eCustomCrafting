@@ -17,7 +17,9 @@ class RecipeResultStateCache {
     private val capacity = 60
 
     private val persistentCache = mutableMapOf<Key, Entry>()
-    private val tempCache = ArrayList<Entry>(capacity)
+    // `capacity` is the eviction bound, NOT the expected size. Pre-sizing the backing array to 60
+    // meant every furnace block entity in the world paid for 60 references it will almost never use.
+    private val tempCache = ArrayList<Entry>()
 
     fun get(recipeKey: Key, persistent: Boolean) : Entry {
         if (persistent) {
@@ -30,6 +32,12 @@ class RecipeResultStateCache {
             if (tempCache.size >= capacity) {
                 tempCache.removeLast()
             }
+            tempCache.add(0, found)
+        } else {
+            // Move to the front on a HIT too. Without this the list is insertion-ordered, not LRU,
+            // so a frequently reused entry still drifted to the tail and got evicted while stale
+            // one-off entries survived — exactly the opposite of what the capacity bound is for.
+            tempCache.remove(found)
             tempCache.add(0, found)
         }
         return found

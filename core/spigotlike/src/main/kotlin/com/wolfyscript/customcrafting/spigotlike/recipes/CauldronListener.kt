@@ -27,8 +27,14 @@ class CauldronListener(val customCrafting: CustomCrafting) : Listener {
             return
         }
 
-        val settings = customCrafting.configurationManager.gameMechanicSettings.cauldron
-        val allowedInteraction = when (settings.interactionType) {
+        // `gameMechanicSettings` is still `TODO("Not yet implemented")`, so reading it throws
+        // NotImplementedError — out of an event handler, on every cauldron right-click. Fall back to
+        // the default interaction until the mechanics config actually exists.
+        val interactionType = runCatching {
+            customCrafting.configurationManager.gameMechanicSettings.cauldron.interactionType
+        }.getOrDefault(CauldronSettings.InteractionType.DEFAULT)
+
+        val allowedInteraction = when (interactionType) {
             CauldronSettings.InteractionType.SNEAKING -> {
                 event.player.isSneaking
             }

@@ -1,8 +1,3 @@
-import com.github.jknack.handlebars.Helper
-import com.github.jknack.handlebars.Options
-import se.bjurr.gitchangelog.api.model.Commit
-import se.bjurr.gitchangelog.internal.semantic.ConventionalCommitParser
-import se.bjurr.gitchangelog.plugin.gradle.HelperParam
 import utils.getTagAt
 
 plugins {

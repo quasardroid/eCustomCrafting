@@ -32,6 +32,14 @@ interface CraftingMatrixData {
     val flatItemIndices: List<Int>
 
     /**
+     * The positions of [flatItems] inside this (trimmed) [matrix], in the same order.
+     *
+     * [flatItemIndices] holds the slots in the ORIGINAL grid, which is what you write back to;
+     * this holds the offsets into [matrix], which is what you read from.
+     */
+    val flatMatrixIndices: List<Int>
+
+    /**
      * The size of the crafting grid.
      * For example, a 2x2 grid has a size of 2.
      */

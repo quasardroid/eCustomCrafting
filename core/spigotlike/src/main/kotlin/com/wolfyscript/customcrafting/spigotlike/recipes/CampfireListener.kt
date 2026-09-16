@@ -17,6 +17,7 @@ import org.bukkit.event.block.Action
 import org.bukkit.event.block.BlockCookEvent
 import org.bukkit.event.block.CampfireStartEvent
 import org.bukkit.event.player.PlayerInteractEvent
+import org.bukkit.inventory.EquipmentSlot
 import kotlin.random.Random
 
 class CampfireListener(val customCrafting: CustomCrafting) : Listener {
@@ -52,6 +53,11 @@ class CampfireListener(val customCrafting: CustomCrafting) : Listener {
         if (event.action != Action.RIGHT_CLICK_BLOCK) {
             return
         }
+        // PlayerInteractEvent fires once per hand. Without this, a player holding the ingredient in
+        // both hands consumed from both and filled two campfire slots with a single right-click.
+        if (event.hand != EquipmentSlot.HAND) {
+            return
+        }
         val stack = event.item ?: return
         if (stack.type == Material.AIR) {
             return
@@ -78,6 +84,11 @@ class CampfireListener(val customCrafting: CustomCrafting) : Listener {
         val recipe = data?.recipe?.value ?: return // No recipe for item. Vanilla behaviour
 
         val ingredientAmount = data.data.bySlot(0)?.matchedItemStackRef?.amount ?: 1
+        // Matching only requires a non-empty stack, not a sufficient one. Holding 1 coal for a
+        // recipe needing 4 placed a stack of 4 on the campfire and left -3 in hand.
+        if (stack.amount < ingredientAmount) {
+            return
+        }
 
         val toPlace = stack.clone().apply {
             amount = ingredientAmount

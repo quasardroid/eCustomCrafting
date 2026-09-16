@@ -21,17 +21,20 @@ internal class IngredientRemainderCustomImpl(
         evalResult: RecipeEvaluationResult<*, *>,
     ): List<ScafallItemStack> {
         val mcSource = target.unwrap()
-        val customRemainder = remainder.create()
         val vanillaRemainder = mcSource.item.craftingRemainder
 
-        if (!ignore.vanilla && vanillaRemainder != null) {
-            return listOf(vanillaRemainder.create().wrap())
-        }
         if (!ignore.others) {
             // TODO: determine remains from third-party mods/plugins
         }
 
-        return listOf(customRemainder)
+        // The configured remainder is the point of this class, so it always wins. The vanilla
+        // remainder is only added alongside it when it is not being ignored — previously the vanilla
+        // one short-circuited and the configured one was thrown away for every item that has one
+        // (buckets, bottles...), which is exactly when someone configures a custom remainder.
+        return listOfNotNull(
+            remainder.create(),
+            vanillaRemainder?.takeIf { !ignore.vanilla }?.create()?.wrap(),
+        )
     }
 
     override fun toString(): String {

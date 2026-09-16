@@ -1,5 +1,7 @@
 package com.wolfyscript.customcrafting.spigotlike.recipes
 
+import com.wolfyscript.customcrafting.core.CustomCrafting
+import com.wolfyscript.customcrafting.core.configuration.recipes.WorkstationSettings
 import com.wolfyscript.customcrafting.core.recipe.*
 import com.wolfyscript.customcrafting.core.recipe.ingredient.Ingredient
 import com.wolfyscript.customcrafting.core.recipe.ingredient.IngredientMatcher
@@ -23,16 +25,68 @@ import java.util.Optional
 
 const val PLACEHOLDER_RECIPE_PREFIX = "cc_placeholder."
 
+/**
+ * Builds the Bukkit placeholder recipes for [recipes].
+ *
+ * Pure data: no server state is touched, so this can run off the main thread.
+ */
+fun buildPlaceholderRecipes(recipes: Collection<RecipeReference<*>>): List<Recipe> {
+    return recipes.mapNotNull { it.toPlaceholder() }
+}
+
+/**
+ * Builds the placeholder recipes for the workstations that are still ENABLED.
+ *
+ * A disabled workstation must not keep its placeholder registered. The placeholder matches loosely
+ * (it uses [RecipeChoice.MaterialChoice], not the real ingredient matcher) and produces the recipe's
+ * first result choice, so leaving it behind would not "turn the recipe off" — vanilla would happily
+ * craft or smelt a degraded version of it with nobody left to correct the outcome.
+ */
+fun buildPlaceholderRecipes(
+    customCrafting: CustomCrafting,
+    recipes: Collection<RecipeReference<*>>,
+): List<Recipe> {
+    val settings = customCrafting.configurationManager.workstationSettings
+    return recipes.filter { it.isWorkstationEnabled(settings) }.mapNotNull { it.toPlaceholder() }
+}
+
+/**
+ * Whether the workstation that would handle this recipe is enabled.
+ *
+ * Anvil (`repairing`) and grindstone (`grinding`) never produce a placeholder at all, so they are
+ * irrelevant here; campfire cooking is likewise never registered (see [CustomRecipeCooking.toPlaceholder]).
+ */
+private fun RecipeReference<*>.isWorkstationEnabled(settings: WorkstationSettings): Boolean {
+    return when (value) {
+        // Either handler can consume a crafting recipe, so the placeholder is needed if either is on.
+        is CustomRecipeCrafting -> settings.craftingTable || settings.crafter
+        is CustomRecipeCooking -> settings.furnace
+        is CustomRecipeSmithing -> settings.smithingTable
+        is CustomRecipeStonecutting -> settings.stonecutter
+        else -> true
+    }
+}
+
 fun registerPlaceholderRecipes(recipes: Collection<RecipeReference<*>>) {
+    registerBukkitRecipes(buildPlaceholderRecipes(recipes))
+    Bukkit.updateRecipes()
+}
+
+/**
+ * Registers already-built recipes, replacing any previous entry under the same key.
+ *
+ * Both calls pass `resendRecipes = false`. The single-argument overloads rebuild the server's recipe
+ * map and push the WHOLE recipe book to every online player on each call, so registering n recipes
+ * cost 2n full client syncs — which is what made a reload freeze the server. The caller is
+ * responsible for one [Bukkit.updateRecipes] once the whole batch is in.
+ */
+internal fun registerBukkitRecipes(recipes: Collection<Recipe>) {
     for (recipe in recipes) {
-        val placeholder = recipe.toPlaceholder()
-        if (placeholder == null) {
-            continue
+        val key = (recipe as Keyed).key
+        if (Bukkit.getRecipe(key) != null) {
+            Bukkit.removeRecipe(key, false)
         }
-        if (Bukkit.getRecipe((placeholder as Keyed).key) != null) {
-            Bukkit.removeRecipe((placeholder as Keyed).key)
-        }
-        Bukkit.addRecipe(placeholder)
+        Bukkit.addRecipe(recipe, false)
     }
 }
 

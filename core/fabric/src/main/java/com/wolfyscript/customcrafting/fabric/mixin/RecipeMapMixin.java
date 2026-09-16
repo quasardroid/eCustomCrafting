@@ -54,8 +54,14 @@ public class RecipeMapMixin {
                     otherPriority = recipe.getPriority();
                 }
             }
-            CustomCraftingProvider.Companion.get().getLogger().debug("Sort {} ({}) <> {} ({})", that.id().identifier(), thatPriority, other.id().identifier(), otherPriority);
-            return -1 * Integer.compare(thatPriority, otherPriority);
+            // This comparator runs O(n log n) times over every recipe on a datapack reload, and the
+            // varargs call plus `id().identifier()` allocated on EVERY comparison even with debug
+            // logging switched off.
+            var logger = CustomCraftingProvider.Companion.get().getLogger();
+            if (logger.isDebugEnabled()) {
+                logger.debug("Sort {} ({}) <> {} ({})", that.id().identifier(), thatPriority, other.id().identifier(), otherPriority);
+            }
+            return Integer.compare(otherPriority, thatPriority);
         });
     }
 

@@ -29,14 +29,21 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.SmithingInventory
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.Plugin
+import java.time.Duration
 import java.util.UUID
 import kotlin.random.Random
 
 class SmithingListener(val plugin: Plugin, val customCrafting: CustomCrafting) : Listener {
 
     val recipeCache =
-        Caffeine.newBuilder().build<UUID, RecipeEvaluationResult<RecipeEvaluationResult.Data, CustomRecipeSmithing>>()
-    val collectsResult = Caffeine.newBuilder().build<UUID, Boolean>()
+        Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofMinutes(10))
+            .maximumSize(1_000)
+            .build<UUID, RecipeEvaluationResult<RecipeEvaluationResult.Data, CustomRecipeSmithing>>()
+    val collectsResult = Caffeine.newBuilder()
+        .expireAfterAccess(Duration.ofMinutes(10))
+        .maximumSize(1_000)
+        .build<UUID, Boolean>()
 
     private fun getSmithingSeed(bukkitPlayer: Player): Long {
         var seed = bukkitPlayer.persistentDataContainer.get(
@@ -62,10 +69,14 @@ class SmithingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
         recipeCache.invalidate(event.view.player.uniqueId)
 
         if (resultStack != null && resultStack.type != Material.AIR) {
-            // Check for disabled vanilla recipes
-            if (Bukkit.getRecipesFor(resultStack).any {
-                    customCrafting.server!!.recipeManager.isRecipeDisabled((it as Keyed).key.toScafall())
-                }) {
+            // Check for disabled vanilla recipes.
+            // `Bukkit.getRecipesFor` walks EVERY recipe on the server and allocates a list of the
+            // matches; this event fires on every change to any smithing slot. Skip the scan entirely
+            // when nothing is disabled, which is the normal case.
+            val recipeManager = customCrafting.server!!.recipeManager
+            if (recipeManager.disabledRecipes.isNotEmpty() &&
+                Bukkit.getRecipesFor(resultStack).any { recipeManager.isRecipeDisabled((it as Keyed).key.toScafall()) }
+            ) {
                 event.result = null
             }
         }
@@ -99,6 +110,9 @@ class SmithingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
             }
 
             SmithingUtils.copyDataComponentsTo(baseStack.wrap(), endResult.wrap(), recipe.copyOptions!!)
+            // Without this the computed result was discarded and the matched custom recipe
+            // produced nothing in the result slot.
+            event.result = endResult
             return
         }
 
@@ -133,13 +147,16 @@ class SmithingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
 
         event.result = Event.Result.DENY  // Cancel the event to prevent vanilla ingredient consumption
 
+        // A quick implementation to collect the result. Things like moving the item to the hotbar won't work!
+        // Exactly ONE branch may deliver the item, and a branch that cannot deliver it must return
+        // before the ingredients are consumed below.
         if (event.isShiftClick) {
+            // Must not fall through to the cursor branches: that gave the player the result in the
+            // inventory AND on the cursor.
             if (event.view.bottomInventory.addItem(resultStack).isNotEmpty()) {
                 return
             }
-        }
-        // A quick implementation to collect the result. Things like moving the item to the hotbar won't work!
-        if (event.cursor.type == Material.AIR) {
+        } else if (event.cursor.type == Material.AIR) {
             Bukkit.getScheduler().runTask(plugin, Runnable {
                 event.view.setCursor(resultStack)
             })
@@ -150,6 +167,10 @@ class SmithingListener(val plugin: Plugin, val customCrafting: CustomCrafting) :
             Bukkit.getScheduler().runTask(plugin, Runnable {
                 event.view.cursor.amount = event.cursor.amount + resultStack.amount
             })
+        } else {
+            // The cursor holds a different item, so nothing can be collected. Consuming the
+            // ingredients here destroyed the result.
+            return
         }
 
         val context = EvaluationContext.of((event.whoClicked as Player).wrap(), inventory.location?.toPreciseGlobal())

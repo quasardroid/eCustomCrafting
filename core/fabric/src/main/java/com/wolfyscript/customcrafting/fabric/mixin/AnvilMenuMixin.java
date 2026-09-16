@@ -72,6 +72,15 @@ abstract class AnvilMenuMixin extends ItemCombinerMenu {
         var recipe = data.getRecipe().getValue();
         var result = recipe.getProcess().compute(data, input, context, getResultRandom(player, resultInfo.getRecipe()));
 
+        // Set the level cost from the custom recipe. Vanilla's createResult is cancelled above, so
+        // without this the DataSlot kept whatever the LAST vanilla computation left in it and
+        // onTake charged the player that stale amount.
+        int customCost = 0;
+        if (recipe.getProcess() instanceof ProcessRepairing.FixedResult fixedResult && fixedResult.getCost() != null) {
+            customCost = fixedResult.getCost();
+        }
+        cost.set(customCost);
+
         getSlot(getResultSlot()).set(result.unwrap());
     }
 
@@ -109,15 +118,18 @@ abstract class AnvilMenuMixin extends ItemCombinerMenu {
         var context = EvaluationContext.of(PlayerWrappersKt.wrap(player), PositionWrappersKt.wrap(player.position(), Key.fromMc(playerLevel.dimension().identifier())));
         var data = resultInfo.getData();
 
+        // `shrink` RETURNS the stack that should stay in the slot (a "replace" ingredient turns into
+        // a different item entirely); discarding it left the slot untouched, so replace-ingredients
+        // were never consumed. SmithingMenuMixin#shrinkCustomIngredient already writes it back.
         var base = data.bySlot(BASE_SLOT);
         if (base != null) {
-            base.getSelectedIngredient().shrink(
+            getSlot(BASE_SLOT).set(base.getSelectedIngredient().shrink(
                 ItemStackWrappersKt.wrap(getSlot(BASE_SLOT).getItem()),
                 1,
                 base.getMatchedItemStackRef(),
                 context,
                 resultInfo
-            );
+            ).unwrap());
         }
         var addition = data.bySlot(ADDITION_SLOT);
         if (addition != null) {
@@ -125,16 +137,20 @@ abstract class AnvilMenuMixin extends ItemCombinerMenu {
             if (data.getItemRepairCost() != null) {
                 count = data.getItemRepairCost();
             }
-            addition.getSelectedIngredient().shrink(
+            getSlot(ADDITION_SLOT).set(addition.getSelectedIngredient().shrink(
                 ItemStackWrappersKt.wrap(getSlot(ADDITION_SLOT).getItem()),
                 count,
                 addition.getMatchedItemStackRef(),
                 context,
                 resultInfo
-            );
+            ).unwrap());
         }
 
-        RecipeResultStateKt.resetRecipeResult((ServerPlayer) player, resultInfo.getRecipe().getKey());
+        // The client runs this path too; the unconditional cast threw there. Lines above and below
+        // already guard with instanceof.
+        if (player instanceof ServerPlayer serverPlayer) {
+            RecipeResultStateKt.resetRecipeResult(serverPlayer, resultInfo.getRecipe().getKey());
+        }
         resultInfo = null;
         cost.set(RESET_COST);
 

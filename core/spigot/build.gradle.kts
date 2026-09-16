@@ -49,8 +49,6 @@ tasks {
     shadowJar {
         archiveFileName.set("${customArchiveName}.jar")
 
-        finalizedBy("spigot_copy")
-
         dependencies {
             include(project(project.projects.core.coreApi))
             include(project(project.projects.core.coreCommon))
@@ -62,7 +60,7 @@ tasks {
         }
         metaInf.duplicatesStrategy = DuplicatesStrategy.FAIL
 
-        relocate("org.bstats", "com.wolfyscript.customcrafting.spigot.bstats")
+        // bstats is not a dependency any more (it was never used); nothing to relocate.
         relocate("io.sentry", "com.wolfyscript.customcrafting.core.sentry")
     }
     gitChangelog {
@@ -84,9 +82,12 @@ bukkitPluginYaml {
     depend.add("scafall")
 
     libraries.apply {
-//        libs.bundles.exposed.get().forEach {
-//            add(it.toString())
-//        }
+// Exposed is used at RUNTIME by core/api (the SQL resource source) but is not shaded into
+        // this jar, so it must be declared here or the plugin hits NoClassDefFoundError.
+        // NOTE: the accessor is `sharedLibs`; gradle/libs.versions.toml has no [bundles] section.
+        sharedLibs.bundles.exposed.get().forEach {
+            add(it.toString())
+        }
         sharedLibs.bundles.database.drivers.get().forEach {
             add(it.toString())
         }
@@ -94,7 +95,6 @@ bukkitPluginYaml {
         addAll(
             sharedLibs.typesafe.config.get().toString(),
             sharedLibs.caffeine.get().toString(),
-            libs.bstats.get().toString(),
         )
     }
 }
@@ -111,4 +111,10 @@ minecraftServers {
             ports.add("25569:25565")
         }
     }
+}
+
+// The docker test-server copy must NOT be chained onto shadowJar: a plain `gradlew build` then
+// wrote jars into the developer's home directory. Only copy when the test server is started.
+tasks.named("spigot_run") {
+    dependsOn(tasks.named("spigot_copy"))
 }

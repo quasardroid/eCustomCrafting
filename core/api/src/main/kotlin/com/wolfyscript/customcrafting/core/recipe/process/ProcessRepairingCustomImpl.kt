@@ -72,8 +72,12 @@ internal class ProcessRepairingCustomImpl(
                     return ItemStack.EMPTY.wrap()
                 }
 
-                // ItemStackRefs are allowed to be stacked items, so calculate how many can be used
-                val maxRepairCount = additionStack.count / (recipeEvaluationResult.data.bySlot(0)?.matchedItemStackRef?.amount ?: 1)
+                // ItemStackRefs are allowed to be stacked items, so calculate how many can be used.
+                // The divisor is the cost per repair of the ADDITION (slot 1). Slot 0 is the base,
+                // so using it made the count depend on the wrong ingredient's amount.
+                val perRepairCost = (recipeEvaluationResult.data.bySlot(1)?.matchedItemStackRef?.amount ?: 1)
+                    .coerceAtLeast(1)
+                val maxRepairCount = additionStack.count / perRepairCost
 
                 for (i in 0 until maxRepairCount) {
                     result.damageValue = result.damageValue - repairAmount

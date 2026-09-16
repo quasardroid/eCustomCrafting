@@ -7,5 +7,6 @@ internal data class IngredientDataImpl(
     override val invSlot: Int,
     override val recipeIndex: Int,
     override val selectedIngredient: Ingredient,
-    override val matchedItemStackRef: ItemStackRef
+    override val matchedItemStackRef: ItemStackRef,
+    override val matrixIndex: Int = invSlot
 ) : IngredientData

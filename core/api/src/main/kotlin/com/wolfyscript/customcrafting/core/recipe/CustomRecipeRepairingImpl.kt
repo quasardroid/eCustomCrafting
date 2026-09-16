@@ -23,6 +23,9 @@ internal class CustomRecipeRepairingImpl(
         input: RecipeInput.RepairingRecipeInput,
         context: EvaluationContext,
     ): RecipeEvaluationResult.RepairingRecipeData? {
+        if (!conditions.areSatisfied(context)) {
+            return null
+        }
         val matchedBase = base.match(input.base)?.let { baseMatch ->
             IngredientDataImpl(0, 0, base, baseMatch)
         } ?: return null
@@ -30,9 +33,13 @@ internal class CustomRecipeRepairingImpl(
         if (addition == null && input.addition != null || addition != null && input.addition == null) {
             return null
         }
-        val matchedAddition = addition?.match(input.addition!!)?.let { additionMatch ->
-            IngredientDataImpl(1, 1, addition, additionMatch)
-        } ?: return null
+        // The addition is optional. An absent addition is a legitimate no-match-needed case, so it
+        // must not abort the evaluation the way a FAILED match of a present addition does.
+        var matchedAddition: IngredientDataImpl? = null
+        if (addition != null) {
+            val additionMatch = addition.match(input.addition!!) ?: return null
+            matchedAddition = IngredientDataImpl(1, 1, addition, additionMatch)
+        }
 
         return RepairingRecipeDataImpl(0, arrayOf(matchedBase, matchedAddition))
     }

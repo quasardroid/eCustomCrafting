@@ -60,6 +60,11 @@ public abstract class GrindstoneMenuMixin extends AbstractContainerMenu {
 
     @Inject(at = @At("HEAD"), method = "createResult", cancellable = true)
     private void computeCustomRecipeResult(CallbackInfo ci) {
+        // Clear first, exactly like AnvilMenuMixin#customRecipeLogic does. Without this the early
+        // return below leaves the PREVIOUS custom result in place, and a later vanilla grind then
+        // cancels vanilla onTake and duplicates the input items.
+        ((GrindstoneResultSlotsExt) getSlot(2)).setResultInfo(null);
+
         var customcrafting = CustomCraftingProvider.Companion.get();
 
         var level = player.level();

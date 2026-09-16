@@ -8,6 +8,7 @@ import com.wolfyscript.customcrafting.core.CustomCrafting
 import com.wolfyscript.customcrafting.CustomCraftingProvider
 import com.wolfyscript.customcrafting.core.resource.Source
 import com.wolfyscript.customcrafting.core.resource.ResourceLoader
+import java.nio.file.Paths
 import kotlin.io.path.Path
 
 /**
@@ -90,20 +91,37 @@ interface SourceSettings {
 
             val driver: String
 
+            companion object {
+                /**
+                 * Resolves a file-database path for a JDBC URL.
+                 *
+                 * Absoluteness must be decided by the platform, not by a leading '/': on Windows
+                 * `C:/data/recipes` was classed as relative and joined under the resources
+                 * directory, giving `jdbc:h2:plugins\CustomCrafting\resources\C:\data\recipes`.
+                 * The result always uses forward slashes, which every JDBC driver accepts.
+                 */
+                @JvmStatic
+                fun resolveFileDatabasePath(path: String): String {
+                    val configured = Paths.get(path)
+                    val resolved = if (configured.isAbsolute) {
+                        configured
+                    } else {
+                        Paths.get(
+                            CustomCraftingProvider.get().server!!.resourceManager.resourceLoader.directory.path,
+                            path
+                        )
+                    }
+                    return resolved.toAbsolutePath().normalize().toString().replace('\\', '/')
+                }
+            }
+
             class H2(
                 val path: String,
                 override val user: String = "",
                 override val password: String = "",
             ) : DatabaseConnectionType {
                 override val jdbcUrl: String
-                    get() {
-                        val finalPath = if (path.startsWith("/")) {
-                            path
-                        } else {
-                            Path(CustomCraftingProvider.get().server!!.resourceManager.resourceLoader.directory.path, path)
-                        }
-                        return "jdbc:h2:$finalPath"
-                    }
+                    get() = "jdbc:h2:" + resolveFileDatabasePath(path)
                 override val driver: String = "org.h2.Driver"
             }
 
@@ -163,14 +181,7 @@ interface SourceSettings {
                 override val password: String = "",
             ) : DatabaseConnectionType {
                 override val jdbcUrl: String
-                    get() {
-                        val finalPath = if (path.startsWith("/")) {
-                            path
-                        } else {
-                            Path(CustomCraftingProvider.get().server!!.resourceManager.resourceLoader.directory.path, path)
-                        }
-                        return "jdbc:sqlite:$finalPath"
-                    }
+                    get() = "jdbc:sqlite:" + resolveFileDatabasePath(path)
                 override val driver: String = "org.sqlite.JDBC"
             }
 

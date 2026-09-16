@@ -38,13 +38,16 @@ fun List<ScafallItemStack>.toCraftingMatrixData(): CraftingMatrixData {
         return CraftingMatrixDataImpl(
             gridSize,
             matrix = Array(width * height) {
-                // Copy the values from the original array by offsetting the row and column back to the original
-                this[(it / width) + minRow + (it % width) + maxColumn]
+                // Copy the values from the original array by offsetting the row and column back to the original.
+                // The original array is a gridSize x gridSize matrix, so a row costs gridSize entries.
+                // <Row in trimmed matrix> + minRow = <Row in original matrix>
+                // <Column in trimmed matrix> + minColumn = <Column in original matrix>
+                this[((it / width) + minRow) * gridSize + ((it % width) + minColumn)]
             },
             width,
             height,
             rowOffset = minRow,
-            columnOffset = maxColumn
+            columnOffset = minColumn
         )
     }
     return CraftingMatrixDataImpl(gridSize(), this.toTypedArray(), gridSize, gridSize, 0, 0)
@@ -79,16 +82,21 @@ internal class CraftingMatrixDataImpl(
 
     override val itemIndices: List<Int>
     override val flatItemIndices: List<Int>
+    override val flatMatrixIndices: List<Int>
     init {
         val indices = mutableListOf<Int>()
         val flatIndices = mutableListOf<Int>()
+        val flatMatrixIdx = mutableListOf<Int>()
         var index = 0
         for (row in 0 until height) {
             for (col in 0 until width) {
-                if (matrix[index] != null) {
+                // Must use the same emptiness test as [flatItems], otherwise flatItemIndices
+                // and flatItems desynchronise and the shapeless matcher pairs the wrong slots.
+                if (!matrix[index].unwrap().isEmpty) {
                     val ogIndex = index + recipeOffset + row * rowSkip
                     indices.add(ogIndex)
                     flatIndices.add(ogIndex)
+                    flatMatrixIdx.add(index)
                 } else {
                     indices.add(-1)
                 }
@@ -97,6 +105,7 @@ internal class CraftingMatrixDataImpl(
         }
         itemIndices = indices
         flatItemIndices = flatIndices
+        flatMatrixIndices = flatMatrixIdx
     }
 
     override fun toString(): String {

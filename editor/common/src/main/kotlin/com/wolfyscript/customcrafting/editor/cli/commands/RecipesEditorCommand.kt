@@ -25,11 +25,18 @@ object RecipesEditorCommand {
     const val ROOT_NAME = "recipes"
 
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>) {
-        sequenceOf(ROOT_NAME, "cc:$ROOT_NAME", "${Key.CUSTOMCRAFTING_NAMESPACE}:$ROOT_NAME").forEach { alias ->
+        // Build the tree ONCE and point the aliases at it. Rebuilding the whole editor subtree for
+        // each of the three aliases tripled the node graph for no benefit.
+        val root = dispatcher.register(
+            Commands.literal(ROOT_NAME).requires { it.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER) }.apply {
+                recipeEditorCLIEntry()
+            }
+        )
+        sequenceOf("cc:$ROOT_NAME", "${Key.CUSTOMCRAFTING_NAMESPACE}:$ROOT_NAME").forEach { alias ->
             dispatcher.register(
-                Commands.literal(alias).requires { it.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER) }.apply {
-                    recipeEditorCLIEntry(dispatcher)
-                }
+                Commands.literal(alias)
+                    .requires { it.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER) }
+                    .redirect(root)
             )
         }
     }

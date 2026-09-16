@@ -27,6 +27,12 @@ import kotlin.io.path.walk
 
 internal class RecipeManagerCommon(val customCrafting: CustomCrafting) : RecipeManager, ResourceListener {
 
+    /**
+     * The index object is immutable, but the reference is swapped from the (async) resource-loading
+     * path and read from the main-thread craft path, so the field itself must be volatile or a
+     * reloading server can keep serving the old index indefinitely.
+     */
+    @Volatile
     private var index: RecipeIndex = RecipeIndex(emptyList())
 
     /**
@@ -100,10 +106,27 @@ internal class RecipeManagerCommon(val customCrafting: CustomCrafting) : RecipeM
      * How recipes should be loaded on startup
      */
     override fun onInitialLoad(resourceLoader: ResourceLoader) {
+        // Each load cycle rebuilds this list. Without the reset, a runtime reload appended a second
+        // copy of every recipe key on top of the ones gathered at startup.
+        awaitingVerificationRecipes.clear()
+        val keysFromEarlierSources = HashSet<Key>()
         resourceLoader.sources.forEach { dest ->
-            dest.load(DataType.Recipes) {
-                customCrafting.logger.info("${LOG_PREFIX}loaded: ${it.key} -> ${it.value}")
-                awaitingVerificationRecipes.add(it)
+            dest.load(DataType.Recipes) { loaded ->
+                // `overwriteExisting` is documented in the shipped resources.conf ("resources loaded
+                // from this destination override existing resources with the same path") but used to
+                // be read by nobody: every source simply appended and the last one silently won.
+                if (!keysFromEarlierSources.add(loaded.key)) {
+                    if (!dest.settings.overwriteExisting) {
+                        customCrafting.logger.debug(
+                            "{}skipped: {} (already provided by an earlier source, and this one does not overwrite)",
+                            LOG_PREFIX, loaded.key
+                        )
+                        return@load
+                    }
+                    awaitingVerificationRecipes.removeIf { existing -> existing.key == loaded.key }
+                }
+                customCrafting.logger.debug("{}loaded: {} -> {}", LOG_PREFIX, loaded.key, loaded.value)
+                awaitingVerificationRecipes.add(loaded)
             }
         }
     }
@@ -113,7 +136,10 @@ internal class RecipeManagerCommon(val customCrafting: CustomCrafting) : RecipeM
      * This should run on a separate thread, async to the main thread.
      */
     override fun onReload(resourceLoader: ResourceLoader) {
-        // TODO
+        // Re-read every source. onInitialLoad resets the pending list first, and onFinalize then
+        // verifies what came back and drops whatever disappeared; that is exactly a reload.
+        // The dedicated hook exists so a reload does NOT re-run the first-startup path.
+        onInitialLoad(resourceLoader)
     }
 
     /**
@@ -140,7 +166,19 @@ internal class RecipeManagerCommon(val customCrafting: CustomCrafting) : RecipeM
             // TODO: verify recipe
             recipesLoadedByCC.add(loadedRecipe.key)
         }
-        customCrafting.server?.recipeManager?.registerOrUpdateRecipes(awaitingVerificationRecipes)
+        // Register on THIS manager directly.
+        //
+        // This used to go `customCrafting.server?.recipeManager?.registerOrUpdateRecipes(...)`, which
+        // is a round trip to this very object through a nullable gate: `RecipeManagerCommon` is built
+        // inside the CustomCraftingServer constructor, so while that constructor runs
+        // `customCrafting.server` is still null. When the `onDependencyInitialized` hook above fired
+        // in that window, the `?.` swallowed the whole registration — while the loop above had
+        // ALREADY added every key to `recipesLoadedByCC`.
+        //
+        // The result was a recipe that reports as loaded in `/recipes status` but is absent from the
+        // index: it never matches when crafting and `getRecipe()` returns null, so the editor cannot
+        // open it either.
+        registerOrUpdateRecipes(awaitingVerificationRecipes)
     }
 
     override fun <I : RecipeInput, D : RecipeEvaluationResult.Data, T : CustomRecipe<I, D>> evaluateRecipesOfType(

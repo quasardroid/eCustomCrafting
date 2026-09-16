@@ -34,9 +34,34 @@ fun setupSentry(
  * The Log4J Appender is necessary to catch errors that are not caught with try-catch or other means.
  * This way we can catch errors very early on in the plugin/mod lifecycle.
  */
+private const val SENTRY_APPENDER_NAME = "customcrafting:sentry"
+
+/**
+ * Detaches the Log4J appender from the global root logger and shuts Sentry down.
+ *
+ * The appender is attached to the JVM-wide root logger, which outlives the plugin: without this a
+ * `/reload` (or a disable) left the old appender and an open Sentry client behind, one more of each
+ * on every cycle.
+ */
+fun teardownSentry() {
+    val logCtx = LoggerContext.getContext(false)
+    val logConfig = logCtx.configuration
+    val existing = logConfig.appenders[SENTRY_APPENDER_NAME]
+    if (existing != null) {
+        logConfig.rootLogger.removeAppender(SENTRY_APPENDER_NAME)
+        logCtx.updateLoggers()
+        existing.stop()
+    }
+    Sentry.close()
+}
+
 private fun initSentry(dataDir: File) {
+    // Idempotent: re-attaching on a second init would double every reported event.
+    if (LoggerContext.getContext(false).configuration.appenders.containsKey(SENTRY_APPENDER_NAME)) {
+        return
+    }
     val sentryAppender = SentryAppender.createAppender(
-        "customcrafting:sentry",
+        SENTRY_APPENDER_NAME,
         null,
         null,
         null,
@@ -77,14 +102,36 @@ private fun initSentry(dataDir: File) {
     }
 
     if (idFile.exists()) {
-        FileInputStream(idFile).use {
-            val bytes = it.readAllBytes()
-            id = UUID.fromString(String(bytes))
+        // The write above swallows its exceptions, so a failed/partial write leaves a zero-byte
+        // file; UUID.fromString("") then threw out of the plugin constructor and stopped
+        // CustomCrafting from loading at all. Telemetry setup must never be able to do that.
+        id = try {
+            FileInputStream(idFile).use {
+                UUID.fromString(String(it.readAllBytes()).trim())
+            }
+        } catch (e: Exception) {
+            idFile.delete()
+            val regenerated = UUID.randomUUID()
+            try {
+                FileOutputStream(idFile).use { out ->
+                    out.write(regenerated.toString().toByteArray())
+                }
+            } catch (_: Exception) {
+                // Ignore exceptions; an in-memory id is good enough for this run.
+            }
+            regenerated
         }
     }
 
+    // Server-side opt-out. `CustomCraftingProperties.sentryEnabled` is baked into the jar at build
+    // time, so without this a server owner could not turn outbound error reporting off at all
+    // without repacking the jar. This is checked here rather than in the plugin config because
+    // setupSentry runs from the plugin/mod constructor, long before any config is parsed.
+    val telemetryOptOut = File(dataDir, "telemetry.disabled").exists()
+    val telemetryEnabled = CustomCraftingProperties.sentryEnabled && !telemetryOptOut
+
     Sentry.init {
-        it.isEnabled = CustomCraftingProperties.sentryEnabled
+        it.isEnabled = telemetryEnabled
         it.dsn = CustomCraftingProperties.sentryDsn
         it.release = CustomCraftingProperties.release
         it.serverName = id?.toString() ?: UUID.randomUUID().toString()

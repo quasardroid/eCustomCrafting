@@ -16,7 +16,9 @@ interface IngredientModel {
 
         val consumer: IngredientConsumerModel<*>
 
-        val replaceWithRemains: Boolean
+        // `replaceWithRemains` used to live here. It was threaded through every use-case but never
+        // read when building the core Ingredient, so it silently did nothing. The remainder is
+        // already fully determined by [consumer]; removed rather than left as a dead toggle.
 
     }
 

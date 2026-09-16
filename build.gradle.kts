@@ -78,16 +78,30 @@ artifactory {
     }
 }
 
+// The platform projects must be evaluated before their `shadowJar` tasks can be referenced from
+// here; by default subprojects are configured after the root.
+evaluationDependsOn(":core:core-paper")
+evaluationDependsOn(":core:core-spigot")
+evaluationDependsOn(":core:core-fabric")
+
 // build.gradle.kts
 modrinth {
     token.set(System.getenv("MODRINTH_TOKEN")) // Remember to have the MODRINTH_TOKEN environment variable set or else this will fail - just make sure it stays private!
     projectId.set("customcrafting") // This can be the project ID or the slug. Either will work!
     versionNumber.set(project.version.toString()) // You don't need to set this manually. Will fail if Modrinth has this version already
     versionType.set("release") // TODO: Automatically determine this from the version
-    uploadFile.set(tasks.shadowJar) // Use the shadowed jar !!
+    // The ROOT project's shadowJar contains no plugin code at all (the root has only a compileOnly
+    // dependency), so publishing it shipped an empty jar. Upload the real platform jars instead.
+    uploadFile.set(project(":core:core-paper").tasks.named("shadowJar"))
+    additionalFiles.set(
+        listOf(
+            project(":core:core-spigot").tasks.named("shadowJar"),
+            project(":core:core-fabric").tasks.named("shadowJar"),
+        )
+    )
     changelog.set(System.getenv("CHANGELOG"))
     gameVersions.addAll(sharedLibs.versions.minecraft.get()) // Must be an array, even with only one version
-    loaders.addAll("bukkit", "spigot", "paper", "purpur") // Must also be an array - no need to specify this if you're using Loom or ForgeGradle
+    loaders.addAll("bukkit", "spigot", "paper", "purpur", "fabric") // Must also be an array - no need to specify this if you're using Loom or ForgeGradle
     dependencies { // A special DSL for creating dependencies
         // scope.type
         // The scope can be `required`, `optional`, `incompatible`, or `embedded`

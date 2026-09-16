@@ -59,7 +59,10 @@ class StonecutterListener(val customCrafting: CustomCrafting) : Listener {
 
     @EventHandler
     private fun onResultCollect(event: InventoryClickEvent) {
-        val inventory = event.inventory as? StonecutterInventory ?: return
+        // `event.inventory` is the VIEW's top inventory, so it is the stonecutter no matter where
+        // the player clicked — slot 1 of their own inventory ran this handler too. Only the
+        // inventory that was actually clicked may drive it.
+        val inventory = event.clickedInventory as? StonecutterInventory ?: return
         val player = event.whoClicked as? Player ?: return
         if (event.slot != RESULT_SLOT) {
             return
@@ -69,7 +72,12 @@ class StonecutterListener(val customCrafting: CustomCrafting) : Listener {
             event.isCancelled = true
             return
         }
-        if (!event.isShiftClick && (!result.isSimilar(event.cursor) || result.amount + event.cursor.amount > event.cursor.maxStackSize)) {
+        val cursor = event.cursor
+        // An empty cursor can always take the result. Testing `isSimilar` against an empty cursor
+        // is always false, which cancelled every ordinary left-click pickup.
+        if (!event.isShiftClick && !cursor.isEmpty &&
+            (!result.isSimilar(cursor) || result.amount + cursor.amount > cursor.maxStackSize)
+        ) {
             event.isCancelled = true
             return
         }
@@ -82,20 +90,25 @@ class StonecutterListener(val customCrafting: CustomCrafting) : Listener {
             player.inventory,
             evalResult,
             recipe.result,
-            listOf(result.wrap()),
+            // How many cuts are possible is governed by what is in the INPUT slot; the previous code
+            // measured the result stack instead.
+            { inventory.getItem(INPUT_SLOT)?.wrap() },
             context,
             Random
         )
 
         evalResult.data.bySlot(INPUT_SLOT)?.let { source ->
             inventory.getItem(INPUT_SLOT)?.let {
-                source.selectedIngredient.shrink(
+                // `shrink` returns the stack that should remain (a replacement ingredient is a
+                // different item entirely); discarding it left the input slot untouched.
+                val remaining = source.selectedIngredient.shrink(
                     it.wrap(),
                     maxPossible,
                     source.matchedItemStackRef,
                     context,
                     evalResult
                 )
+                inventory.setItem(INPUT_SLOT, remaining.unwrapSpigot())
             }
         }
 

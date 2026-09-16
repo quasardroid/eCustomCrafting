@@ -11,8 +11,12 @@ class CustomCraftingServerPaper(val spigotLike: CustomCraftingServerSpigotLike) 
     override fun onLoad() {
         spigotLike.onLoad()
 
-        Bukkit.getPluginManager().apply {
-            registerEvents(StonecutterListener(spigotLike.customCrafting), spigotLike.plugin)
+        // Paper-only listener; `workstations.conf: stonecutter` is ignored on plain Spigot because
+        // this is never reached there.
+        if (spigotLike.customCrafting.configurationManager.workstationSettings.stonecutter) {
+            Bukkit.getPluginManager().apply {
+                registerEvents(StonecutterListener(spigotLike.customCrafting), spigotLike.plugin)
+            }
         }
     }
 

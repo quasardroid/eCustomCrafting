@@ -51,7 +51,7 @@ public class CrafterMixin {
     )
     private void shrinkMatrix(
         BlockState state, ServerLevel level, BlockPos pos, CallbackInfo ci,
-        @Local(name = "blockEntity") CrafterBlockEntity blockEntity, @Local(name = "craftInput") CraftingInput craftInput
+        @Local /* was: name="blockEntity" */ CrafterBlockEntity blockEntity, @Local /* was: name="craftInput" */ CraftingInput craftInput
     ) {
         var context = EvaluationContextState.INSTANCE.getCurrent();
         if (context == null) return;

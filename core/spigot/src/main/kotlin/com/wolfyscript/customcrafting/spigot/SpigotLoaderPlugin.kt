@@ -3,6 +3,7 @@ package com.wolfyscript.customcrafting.spigot
 import com.wolfyscript.customcrafting.CustomCraftingBoostrap
 import com.wolfyscript.customcrafting.core.data.DataManager
 import com.wolfyscript.customcrafting.core.sentry.setupSentry
+import com.wolfyscript.customcrafting.core.sentry.teardownSentry
 import com.wolfyscript.customcrafting.core.util.CUSTOMCRAFTING_NAMESPACE
 import com.wolfyscript.scafall.identifier.Key
 import com.wolfyscript.scafall.loader.ScafallLoader
@@ -27,7 +28,9 @@ class SpigotLoaderPlugin : JavaPlugin() {
     init {
         setupSentry(
             MinecraftServer.getServer().serverVersion,
-            PlatformType.PAPER,
+            // This is the Spigot loader; tagging its crash reports as PAPER files Spigot-only bugs
+            // as Paper bugs.
+            PlatformType.SPIGOT,
             File(dataFolder, "${Key.CUSTOMCRAFTING_NAMESPACE}/${DataManager.DATA_PATH}")
         ) { scope ->
             scope.setTag("bukkit.version", Bukkit.getVersion())
@@ -35,8 +38,8 @@ class SpigotLoaderPlugin : JavaPlugin() {
     }
 
     override fun onLoad() {
-        customCrafting.configurationManager.load()
-
+        // CustomCraftingSpigot.onInit() already loads the configuration; doing it here as well
+        // parsed every config file from disk twice on every boot.
         customCrafting.initServer(Bukkit.getServer())
     }
 
@@ -46,6 +49,7 @@ class SpigotLoaderPlugin : JavaPlugin() {
 
     override fun onDisable() {
         customCrafting.server?.onUnload()
+        teardownSentry()
     }
 
 }

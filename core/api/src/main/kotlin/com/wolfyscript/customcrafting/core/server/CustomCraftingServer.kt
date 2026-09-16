@@ -16,4 +16,16 @@ interface CustomCraftingServer : Server {
 
     val resourceManager: ResourceManager
 
+    /**
+     * Pushes the freshly (re)loaded recipes into the platform's own recipe registry.
+     *
+     * Called after a runtime reload has finished parsing, which happens off the main thread. The
+     * implementation is responsible for getting onto the main thread itself and for spreading the
+     * work so a reload does not stall the tick loop.
+     *
+     * Default: nothing to do.
+     */
+    fun onRecipesReloaded() {
+    }
+
 }

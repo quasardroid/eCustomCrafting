@@ -33,8 +33,11 @@ internal fun EditorHome(backstack: SnapshotStateList<NavKey>) {
     ) {
         for (recipeType in homeState.recipeTypes) {
             Button(onClick = {
-                editorStore.selectRecipeType(recipeType)
-                backstack.add(Paths.RecipeEditor(recipeType))
+                // Only navigate when a session was actually started. Navigating regardless opened
+                // the editor onto whatever the previous session held.
+                editorStore.selectRecipeType(recipeType).onSuccess {
+                    backstack.add(Paths.RecipeEditor(recipeType))
+                }
             }) {
                 Icon(stack = ItemStack(recipeType.icon).snapshot())
             }

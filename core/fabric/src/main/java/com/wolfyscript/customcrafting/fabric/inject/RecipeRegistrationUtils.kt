@@ -28,10 +28,10 @@ object RecipeRegistrationUtils {
         val customCrafting = CustomCraftingProvider.get() as CustomCraftingFabric
         customCrafting.logger.info("  proxy recipes:")
         customCrafting.server?.recipeManager?.recipes()?.forEach {
-            customCrafting.logger.info("  -> ${it.key}")
+            customCrafting.logger.debug("  -> {}", it.key)
             val proxyRecipe = it.toVanillaProxyRecipe()
             proxyRecipe.forEach { recipe ->
-                customCrafting.logger.info("  proxy: ${recipe.id().identifier()}")
+                customCrafting.logger.debug("  proxy: {}", recipe.id().identifier())
                 list.add(recipe)
             }
         }
